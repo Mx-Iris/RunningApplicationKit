@@ -317,13 +317,12 @@ extension RunningApplicationPickerViewController {
     }
 
     private class IconCellView: CellView {
-        
         var tintColor: NSColor? {
             didSet {
                 iconImageView.contentTintColor = tintColor
             }
         }
-        
+
         var image: NSImage? {
             didSet {
                 iconImageView.image = image
@@ -390,7 +389,7 @@ extension RunningApplicationPickerViewController {
         }
 
         private let checkbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
-        
+
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
             addSubview(checkbox)
@@ -475,7 +474,7 @@ extension NSRunningApplication {
         guard let bundleIdentifier else { return nil }
         return LSApplicationProxy(forIdentifier: bundleIdentifier)
     }
-    
+
     var isSandboxed: Bool {
         guard let entitlements = applicationProxy?.entitlements else { return false }
         guard let isSandboxed = entitlements["com.apple.security.app-sandbox"] as? Bool else { return false }
@@ -486,4 +485,17 @@ extension NSRunningApplication {
 extension NSImage {
     static let checkmarkImage = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: nil)
     static let xmarkImage = NSImage(systemSymbolName: "xmark.circle", accessibilityDescription: nil)
+}
+
+extension RunningApplicationPickerViewController.Delegate {
+    public func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, shouldSelectApplication application: NSRunningApplication) -> Bool {
+        true
+    }
+
+    public func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, didSelectApplication application: NSRunningApplication)
+    {}
+    
+    public func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, didConfirmApplication application: NSRunningApplication) {}
+    
+    public func runningApplicationPickerViewControllerWasCancel(_ viewController: RunningApplicationPickerViewController) {}
 }
