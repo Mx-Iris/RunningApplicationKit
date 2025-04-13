@@ -137,40 +137,9 @@ public final class RunningApplicationPickerViewController: NSViewController {
 
     private var runningApplicationObservation: NSKeyValueObservation?
 
+    private let searchField = NSSearchField()
+    
     private lazy var dataSource = makeDataSource()
-
-    private func makeDataSource() -> DataSource {
-        .init(tableView: tableView) { tableView, tableColumn, _, runningApplication in
-            guard let column = Column(rawValue: tableColumn.identifier.rawValue) else { return NSView() }
-            switch column {
-            case .icon:
-                return tableView.makeView(ofClass: IconCellView.self) {
-                    $0.image = runningApplication.icon
-                }
-            case .name:
-                return tableView.makeView(ofClass: LabelCellView.self) {
-                    $0.string = runningApplication.localizedName
-                }
-            case .bundleIdentifier:
-                return tableView.makeView(ofClass: LabelCellView.self) {
-                    $0.string = runningApplication.bundleIdentifier
-                }
-            case .pid:
-                return tableView.makeView(ofClass: LabelCellView.self) {
-                    $0.string = "\(runningApplication.processIdentifier)"
-                }
-            case .architecture:
-                return tableView.makeView(ofClass: LabelCellView.self) {
-                    $0.string = runningApplication.architecture.description
-                }
-            case .sandboxed:
-                return tableView.makeView(ofClass: IconCellView.self) {
-                    $0.image = runningApplication.isSandboxed ? .checkmarkImage : .xmarkImage
-                    $0.tintColor = runningApplication.isSandboxed ? .systemGreen : .systemRed
-                }
-            }
-        }
-    }
 
     public private(set) var configuration: Configuration
 
@@ -238,8 +207,30 @@ public final class RunningApplicationPickerViewController: NSViewController {
         tableView.style = .inset
         tableView.dataSource = dataSource
         tableView.delegate = self
+        tableView.menu = makeTableViewMenu()
         setupObservation()
         reloadData()
+    }
+    
+    private func makeTableViewMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Copy PID", action: #selector(tableViewCopyPIDMenuItemAction(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Copy Bundle ID", action: #selector(tableViewCopyBundleIDMenuItemAction(_:)), keyEquivalent: "")
+        return menu
+    }
+    
+    @objc private func tableViewCopyPIDMenuItemAction(_ sender: NSMenuItem) {
+        guard let runningApplication = dataSource.itemIdentifier(forRow: tableView.clickedRow) else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString("\(runningApplication.processIdentifier)", forType: .string)
+    }
+    
+    @objc private func tableViewCopyBundleIDMenuItemAction(_ sender: NSMenuItem) {
+        guard let runningApplication = dataSource.itemIdentifier(forRow: tableView.clickedRow), let bundleIdentifier = runningApplication.bundleIdentifier else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(bundleIdentifier, forType: .string)
     }
 
     private func setupObservation() {
@@ -299,13 +290,51 @@ public final class RunningApplicationPickerViewController: NSViewController {
         setupColumns(configuration.allowsColumns)
     }
 
+    private func makeDataSource() -> DataSource {
+        DataSource(tableView: tableView) { [weak self] tableView, tableColumn, _, runningApplication in
+            guard let self, let cellView = makeCellView(tableColumn: tableColumn, runningApplication: runningApplication) else { return NSView() }
+            return cellView
+        }
+    }
+
+    private func makeCellView(tableColumn: NSTableColumn, runningApplication: NSRunningApplication) -> NSView? {
+        guard let column = Column(rawValue: tableColumn.identifier.rawValue) else { return nil }
+        switch column {
+        case .icon:
+            return tableView.makeView(ofClass: IconTableCellView.self) {
+                $0.image = runningApplication.icon
+            }
+        case .name:
+            return tableView.makeView(ofClass: LabelTableCellView.self) {
+                $0.string = runningApplication.localizedName
+            }
+        case .bundleIdentifier:
+            return tableView.makeView(ofClass: LabelTableCellView.self) {
+                $0.string = runningApplication.bundleIdentifier
+            }
+        case .pid:
+            return tableView.makeView(ofClass: LabelTableCellView.self) {
+                $0.string = "\(runningApplication.processIdentifier)"
+            }
+        case .architecture:
+            return tableView.makeView(ofClass: LabelTableCellView.self) {
+                $0.string = runningApplication.architecture.description
+            }
+        case .sandboxed:
+            return tableView.makeView(ofClass: IconTableCellView.self) {
+                $0.image = runningApplication.isSandboxed ? .checkmarkImage : .xmarkImage
+                $0.tintColor = runningApplication.isSandboxed ? .systemGreen : .systemRed
+            }
+        }
+    }
+
     deinit {
         print("\(Self.self) deinit")
     }
 }
 
 extension RunningApplicationPickerViewController {
-    private class CellView: NSTableCellView {
+    private class TableCellView: NSTableCellView {
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
         }
@@ -316,7 +345,7 @@ extension RunningApplicationPickerViewController {
         }
     }
 
-    private class IconCellView: CellView {
+    private class IconTableCellView: TableCellView {
         var tintColor: NSColor? {
             didSet {
                 iconImageView.contentTintColor = tintColor
@@ -344,7 +373,7 @@ extension RunningApplicationPickerViewController {
         }
     }
 
-    private class LabelCellView: CellView {
+    private class LabelTableCellView: TableCellView {
         var string: String? {
             didSet {
                 label.stringValue = string ?? ""
@@ -375,7 +404,7 @@ extension RunningApplicationPickerViewController {
         }
     }
 
-    private class CheckboxCellView: CellView {
+    private class CheckboxTableCellView: TableCellView {
         public var isChecked: Bool = false {
             didSet {
                 checkbox.state = isChecked ? .on : .off
@@ -410,6 +439,11 @@ extension RunningApplicationPickerViewController: NSTableViewDelegate {
     public func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
         guard let delegate, let runningApplication = dataSource.itemIdentifier(forRow: row) else { return true }
         return delegate.runningApplicationPickerViewController(self, shouldSelectApplication: runningApplication)
+    }
+
+    public func tableView(_ tableView: NSTableView, typeSelectStringFor tableColumn: NSTableColumn?, row: Int) -> String? {
+        guard let runningApplication = dataSource.itemIdentifier(forRow: row) else { return nil }
+        return runningApplication.localizedName
     }
 }
 
@@ -494,8 +528,8 @@ extension RunningApplicationPickerViewController.Delegate {
 
     public func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, didSelectApplication application: NSRunningApplication)
     {}
-    
+
     public func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, didConfirmApplication application: NSRunningApplication) {}
-    
+
     public func runningApplicationPickerViewControllerWasCancel(_ viewController: RunningApplicationPickerViewController) {}
 }
