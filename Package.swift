@@ -13,7 +13,10 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/MxIris-Reverse-Engineering/LaunchServicesPrivate", branch: "main"),
+        .package(
+            url: "https://github.com/MxIris-Reverse-Engineering/LaunchServicesPrivate",
+            from: "0.1.0"
+        ),
     ],
     targets: [
         .target(

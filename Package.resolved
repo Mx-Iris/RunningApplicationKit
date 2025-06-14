@@ -1,13 +1,13 @@
 {
-  "originHash" : "7649a974268206ea887c8cb421f6c2d5ac8cb3517051d02996668bec6149945c",
+  "originHash" : "e98593b90a53c1e1e7fa51294230f360dfd4e06b7a59e8245425bdf379b4b205",
   "pins" : [
     {
       "identity" : "launchservicesprivate",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/MxIris-Reverse-Engineering/LaunchServicesPrivate",
       "state" : {
-        "branch" : "main",
-        "revision" : "80d52a34fed345c3e0852a4c6434f08076c103bf"
+        "revision" : "ee6dbcf2f13176c005337b37ba88431d40458a2b",
+        "version" : "0.1.0"
       }
     }
   ],
