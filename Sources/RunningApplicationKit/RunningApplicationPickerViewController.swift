@@ -49,7 +49,7 @@ public final class RunningApplicationPickerViewController: NSViewController {
             case .architecture:
                 "Arch"
             case .sandboxed:
-                "Sandboxed"
+                "Sandbox"
             }
         }
 
