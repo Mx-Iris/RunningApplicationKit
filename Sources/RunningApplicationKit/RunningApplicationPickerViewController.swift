@@ -25,7 +25,9 @@ public final class RunningApplicationPickerViewController: NSViewController {
         func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, shouldSelectApplication application: NSRunningApplication) -> Bool
         func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, didSelectApplication application: NSRunningApplication)
         func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, didConfirmApplication application: NSRunningApplication)
+        @available(*, deprecated, renamed: "runningApplicationPickerViewControllerWasCancelled(_:)")
         func runningApplicationPickerViewControllerWasCancel(_ viewController: RunningApplicationPickerViewController)
+        func runningApplicationPickerViewControllerWasCancelled(_ viewController: RunningApplicationPickerViewController)
     }
 
     public enum Column: String, CaseIterable {
@@ -131,6 +133,8 @@ public final class RunningApplicationPickerViewController: NSViewController {
 
     private let topStackView = NSStackView()
 
+    private let titleStackView = NSStackView()
+
     private let bottomStackView = NSStackView()
 
     private var workspace = NSWorkspace.shared
@@ -138,7 +142,7 @@ public final class RunningApplicationPickerViewController: NSViewController {
     private var runningApplicationObservation: NSKeyValueObservation?
 
     private let searchField = NSSearchField()
-    
+
     private lazy var dataSource = makeDataSource()
 
     public private(set) var configuration: Configuration
@@ -160,6 +164,8 @@ public final class RunningApplicationPickerViewController: NSViewController {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
+        preferredContentSize = .init(width: 800, height: 600)
+        
         view.addSubview(scrollView)
         view.addSubview(topStackView)
         view.addSubview(bottomStackView)
@@ -181,13 +187,24 @@ public final class RunningApplicationPickerViewController: NSViewController {
             bottomStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             bottomStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             bottomStackView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
+
+            searchField.widthAnchor.constraint(equalToConstant: 300),
         ])
-        topStackView.orientation = .vertical
+
+        topStackView.orientation = .horizontal
         topStackView.spacing = 10
         topStackView.distribution = .fill
-        topStackView.alignment = .leading
-        topStackView.addArrangedSubview(titleLabel)
-        topStackView.addArrangedSubview(descriptionLabel)
+        topStackView.alignment = .top
+        topStackView.addArrangedSubview(titleStackView)
+        topStackView.addArrangedSubview(searchField)
+
+        titleStackView.orientation = .vertical
+        titleStackView.spacing = 10
+        titleStackView.distribution = .fill
+        titleStackView.alignment = .leading
+        titleStackView.addArrangedSubview(titleLabel)
+        titleStackView.addArrangedSubview(descriptionLabel)
+
         bottomStackView.orientation = .horizontal
         bottomStackView.spacing = 10
         bottomStackView.distribution = .gravityAreas
@@ -195,20 +212,41 @@ public final class RunningApplicationPickerViewController: NSViewController {
         bottomStackView.addView(cancelButton, in: .trailing)
         bottomStackView.addView(confirmButton, in: .trailing)
         bottomStackView.setCustomSpacing(12, after: cancelButton)
+
+        if #available(macOS 26.0, *) {
+            searchField.controlSize = .extraLarge
+        } else {
+            searchField.controlSize = .large
+        }
+        searchField.target = self
+        searchField.action = #selector(searchTextFieldDidChange(_:))
+        
         titleLabel.font = .systemFont(ofSize: 20, weight: .bold)
         titleLabel.textColor = .labelColor
+
         descriptionLabel.font = .systemFont(ofSize: 14, weight: .regular)
         descriptionLabel.textColor = .secondaryLabelColor
+
+        cancelButton.keyEquivalent = "\u{1b}"
+        
         confirmButton.keyEquivalent = "\r"
         confirmButton.isEnabled = false
+
         scrollView.documentView = tableView
+
         tableView.allowsEmptySelection = false
         tableView.allowsMultipleSelection = false
         tableView.style = .inset
         tableView.dataSource = dataSource
         tableView.delegate = self
         tableView.menu = makeTableViewMenu()
+
         setupObservation()
+
+        reloadData()
+    }
+
+    @objc private func searchTextFieldDidChange(_ sender: NSSearchField) {
         reloadData()
     }
     
@@ -218,14 +256,14 @@ public final class RunningApplicationPickerViewController: NSViewController {
         menu.addItem(withTitle: "Copy Bundle ID", action: #selector(tableViewCopyBundleIDMenuItemAction(_:)), keyEquivalent: "")
         return menu
     }
-    
+
     @objc private func tableViewCopyPIDMenuItemAction(_ sender: NSMenuItem) {
         guard let runningApplication = dataSource.itemIdentifier(forRow: tableView.clickedRow) else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString("\(runningApplication.processIdentifier)", forType: .string)
     }
-    
+
     @objc private func tableViewCopyBundleIDMenuItemAction(_ sender: NSMenuItem) {
         guard let runningApplication = dataSource.itemIdentifier(forRow: tableView.clickedRow), let bundleIdentifier = runningApplication.bundleIdentifier else { return }
         let pasteboard = NSPasteboard.general
@@ -241,10 +279,18 @@ public final class RunningApplicationPickerViewController: NSViewController {
     }
 
     private func reloadData(newValue: [NSRunningApplication]? = nil) {
-        let runningApplications = newValue ?? workspace.runningApplications
+        var runningApplications = newValue ?? workspace.runningApplications
         var snapshot = Snapshot()
         snapshot.appendSections([.main])
-        snapshot.appendItems(runningApplications.filter { $0.processIdentifier > 0 }, toSection: .main)
+        
+        runningApplications = runningApplications.filter {
+            if searchField.stringValue.isEmpty {
+                return $0.processIdentifier > 0
+            } else {
+                return $0.processIdentifier > 0 && ($0.localizedName?.localizedCaseInsensitiveContains(searchField.stringValue) ?? false)
+            }
+        }
+        snapshot.appendItems(runningApplications, toSection: .main)
         dataSource.apply(snapshot, animatingDifferences: true)
     }
 
@@ -271,7 +317,7 @@ public final class RunningApplicationPickerViewController: NSViewController {
     }
 
     @objc private func cancelAction() {
-        delegate?.runningApplicationPickerViewControllerWasCancel(self)
+        delegate?.runningApplicationPickerViewControllerWasCancelled(self)
     }
 
     @objc private func confirmAction() {
@@ -377,12 +423,14 @@ extension RunningApplicationPickerViewController {
         var string: String? {
             didSet {
                 label.stringValue = string ?? ""
+                toolTip = label.stringValue
             }
         }
 
         var attributedString: NSAttributedString? {
             didSet {
                 label.attributedStringValue = attributedString ?? NSAttributedString()
+                toolTip = label.attributedStringValue.string
             }
         }
 
@@ -405,13 +453,13 @@ extension RunningApplicationPickerViewController {
     }
 
     private class CheckboxTableCellView: TableCellView {
-        public var isChecked: Bool = false {
+        var isChecked: Bool = false {
             didSet {
                 checkbox.state = isChecked ? .on : .off
             }
         }
 
-        public var isEnabled: Bool = false {
+        var isEnabled: Bool = false {
             didSet {
                 checkbox.isEnabled = isEnabled
             }
@@ -532,4 +580,13 @@ extension RunningApplicationPickerViewController.Delegate {
     public func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, didConfirmApplication application: NSRunningApplication) {}
 
     public func runningApplicationPickerViewControllerWasCancel(_ viewController: RunningApplicationPickerViewController) {}
+    
+    public func runningApplicationPickerViewControllerWasCancelled(_ viewController: RunningApplicationPickerViewController) {}
+}
+
+import SwiftUI
+
+@available(macOS 14.0, *)
+#Preview(traits: .fixedLayout(width: 800, height: 700)) {
+    RunningApplicationPickerViewController()
 }
