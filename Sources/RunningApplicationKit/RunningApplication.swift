@@ -1,28 +1,48 @@
 import AppKit
 
 public struct RunningApplication: RunningItem {
-    public let pid: pid_t
+    public let processIdentifier: pid_t
     public let name: String
+    public let localizedName: String?
     public let bundleIdentifier: String?
+    public let bundleURL: URL?
+    public let executableURL: URL?
     public let icon: NSImage?
     public let architecture: Architecture?
+    public let launchDate: Date?
+    public let isFinishedLaunching: Bool
+    public let isHidden: Bool
+    public let isActive: Bool
+    public let isTerminated: Bool
+    public let ownsMenuBar: Bool
+    public let activationPolicy: NSApplication.ActivationPolicy
     public let isSandboxed: Bool
 
     public init(from app: NSRunningApplication) {
-        self.pid = app.processIdentifier
+        self.processIdentifier = app.processIdentifier
         self.name = app.localizedName ?? "Unknown"
+        self.localizedName = app.localizedName
         self.bundleIdentifier = app.bundleIdentifier
+        self.bundleURL = app.bundleURL
+        self.executableURL = app.executableURL
         self.icon = app.icon
         self.architecture = app.architecture
+        self.launchDate = app.launchDate
+        self.isFinishedLaunching = app.isFinishedLaunching
+        self.isHidden = app.isHidden
+        self.isActive = app.isActive
+        self.isTerminated = app.isTerminated
+        self.ownsMenuBar = app.ownsMenuBar
+        self.activationPolicy = app.activationPolicy
         self.isSandboxed = app.isSandboxed
     }
 
     // Hashable: identity by PID
     public func hash(into hasher: inout Hasher) {
-        hasher.combine(pid)
+        hasher.combine(processIdentifier)
     }
 
     public static func == (lhs: RunningApplication, rhs: RunningApplication) -> Bool {
-        lhs.pid == rhs.pid
+        lhs.processIdentifier == rhs.processIdentifier
     }
 }

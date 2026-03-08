@@ -154,7 +154,7 @@ public final class RunningProcessPickerViewController: RunningItemPickerViewCont
             }
         case .pid:
             return tableView.makeView(ofClass: LabelTableCellView.self) {
-                $0.string = "\(item.pid)"
+                $0.string = "\(item.processIdentifier)"
             }
         case .architecture:
             return tableView.makeView(ofClass: LabelTableCellView.self) {
@@ -219,7 +219,7 @@ public final class RunningProcessPickerViewController: RunningItemPickerViewCont
         guard let item = sender.representedObject as? RunningProcess else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString("\(item.pid)", forType: .string)
+        pasteboard.setString("\(item.processIdentifier)", forType: .string)
     }
 
     @objc private func copyPathAction(_ sender: NSMenuItem) {

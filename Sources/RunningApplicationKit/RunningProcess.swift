@@ -2,26 +2,68 @@ import AppKit
 import Darwin
 
 public struct RunningProcess: RunningItem {
-    public let pid: pid_t
+    public let processIdentifier: pid_t
     public let name: String
+    public let localizedName: String?
+    public let bundleIdentifier: String?
+    public let bundleURL: URL?
+    public let executableURL: URL?
     public let executablePath: String?
     public let icon: NSImage?
     public let architecture: Architecture?
+    public let launchDate: Date?
+    public let isFinishedLaunching: Bool
+    public let isHidden: Bool
+    public let isActive: Bool
+    public let isTerminated: Bool
+    public let ownsMenuBar: Bool
+    public let activationPolicy: NSApplication.ActivationPolicy
+    public let isSandboxed: Bool
 
-    public init(pid: pid_t, name: String, executablePath: String?, icon: NSImage?, architecture: Architecture?) {
-        self.pid = pid
+    public init(
+        processIdentifier: pid_t,
+        name: String,
+        localizedName: String? = nil,
+        bundleIdentifier: String? = nil,
+        bundleURL: URL? = nil,
+        executableURL: URL? = nil,
+        executablePath: String? = nil,
+        icon: NSImage? = nil,
+        architecture: Architecture? = nil,
+        launchDate: Date? = nil,
+        isFinishedLaunching: Bool = false,
+        isHidden: Bool = false,
+        isActive: Bool = false,
+        isTerminated: Bool = false,
+        ownsMenuBar: Bool = false,
+        activationPolicy: NSApplication.ActivationPolicy = .prohibited,
+        isSandboxed: Bool = false
+    ) {
+        self.processIdentifier = processIdentifier
         self.name = name
+        self.localizedName = localizedName
+        self.bundleIdentifier = bundleIdentifier
+        self.bundleURL = bundleURL
+        self.executableURL = executableURL
         self.executablePath = executablePath
         self.icon = icon
         self.architecture = architecture
+        self.launchDate = launchDate
+        self.isFinishedLaunching = isFinishedLaunching
+        self.isHidden = isHidden
+        self.isActive = isActive
+        self.isTerminated = isTerminated
+        self.ownsMenuBar = ownsMenuBar
+        self.activationPolicy = activationPolicy
+        self.isSandboxed = isSandboxed
     }
 
     public func hash(into hasher: inout Hasher) {
-        hasher.combine(pid)
+        hasher.combine(processIdentifier)
     }
 
     public static func == (lhs: RunningProcess, rhs: RunningProcess) -> Bool {
-        lhs.pid == rhs.pid
+        lhs.processIdentifier == rhs.processIdentifier
     }
 }
 
@@ -50,16 +92,22 @@ public enum RunningProcessEnumerator {
             let pid = pids[i]
             guard pid > 0, !appPIDs.contains(pid) else { continue }
 
-            // Get process name
-            var nameBuffer = [CChar](repeating: 0, count: Int(MAXCOMLEN) + 1)
-            let nameLength = proc_name(pid, &nameBuffer, UInt32(nameBuffer.count))
-            guard nameLength > 0 else { continue }
-            let name = String(cString: nameBuffer)
-
-            // Get executable path
+            // Get executable path (try this first as it's more reliable)
             var pathBuffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
             let pathLength = proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count))
             let executablePath: String? = pathLength > 0 ? String(cString: pathBuffer) : nil
+
+            // Get process name, fallback to path basename
+            var nameBuffer = [CChar](repeating: 0, count: Int(MAXCOMLEN) + 1)
+            let nameLength = proc_name(pid, &nameBuffer, UInt32(nameBuffer.count))
+            let name: String
+            if nameLength > 0 {
+                name = String(cString: nameBuffer)
+            } else if let executablePath {
+                name = (executablePath as NSString).lastPathComponent
+            } else {
+                continue
+            }
 
             // Get icon from executable path
             let icon: NSImage?
@@ -70,7 +118,7 @@ public enum RunningProcessEnumerator {
             }
 
             let process = RunningProcess(
-                pid: pid,
+                processIdentifier: pid,
                 name: name,
                 executablePath: executablePath,
                 icon: icon,
@@ -79,6 +127,6 @@ public enum RunningProcessEnumerator {
             processes.append(process)
         }
 
-        return processes.sorted { $0.pid < $1.pid }
+        return processes.sorted { $0.processIdentifier < $1.processIdentifier }
     }
 }
