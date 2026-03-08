@@ -495,50 +495,6 @@ extension RunningApplicationPickerViewController: NSTableViewDelegate {
     }
 }
 
-extension NSRunningApplication {
-    enum Architecture: CustomStringConvertible {
-        case x86_64
-        case arm64
-        case i386
-        case ppc
-        case ppc64
-        case unknown
-        var description: String {
-            switch self {
-            case .x86_64:
-                "x64"
-            case .arm64:
-                "arm64"
-            case .i386:
-                "i386"
-            case .ppc:
-                "PPC"
-            case .ppc64:
-                "PPC64"
-            case .unknown:
-                "Unknown"
-            }
-        }
-    }
-
-    var architecture: Architecture {
-        switch executableArchitecture {
-        case NSBundleExecutableArchitectureARM64:
-            return .arm64
-        case NSBundleExecutableArchitectureX86_64:
-            return .x86_64
-        case NSBundleExecutableArchitectureI386:
-            return .i386
-        case NSBundleExecutableArchitecturePPC:
-            return .ppc
-        case NSBundleExecutableArchitecturePPC64:
-            return .ppc64
-        default:
-            return .unknown
-        }
-    }
-}
-
 extension RunningApplicationPickerViewController.Delegate {
     public func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, shouldSelectApplication application: NSRunningApplication) -> Bool {
         true
