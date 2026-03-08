@@ -1,31 +1,31 @@
 import AppKit
 
-open class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTableViewDelegate, NSMenuDelegate {
-    public struct BaseConfiguration {
-        public var title: String
-        public var description: String
-        public var cancelButtonTitle: String
-        public var confirmButtonTitle: String
-        public var rowHeight: CGFloat
-        public var cellSpacing: CGSize
+struct BaseConfiguration {
+    var title: String
+    var description: String
+    var cancelButtonTitle: String
+    var confirmButtonTitle: String
+    var rowHeight: CGFloat
+    var cellSpacing: CGSize
 
-        public init(
-            title: String = "",
-            description: String = "",
-            cancelButtonTitle: String = "Cancel",
-            confirmButtonTitle: String = "Confirm",
-            rowHeight: CGFloat = 25,
-            cellSpacing: CGSize = .init(width: 0, height: 10)
-        ) {
-            self.title = title
-            self.description = description
-            self.cancelButtonTitle = cancelButtonTitle
-            self.confirmButtonTitle = confirmButtonTitle
-            self.rowHeight = rowHeight
-            self.cellSpacing = cellSpacing
-        }
+    init(
+        title: String = "",
+        description: String = "",
+        cancelButtonTitle: String = "Cancel",
+        confirmButtonTitle: String = "Confirm",
+        rowHeight: CGFloat = 25,
+        cellSpacing: CGSize = .init(width: 0, height: 10)
+    ) {
+        self.title = title
+        self.description = description
+        self.cancelButtonTitle = cancelButtonTitle
+        self.confirmButtonTitle = confirmButtonTitle
+        self.rowHeight = rowHeight
+        self.cellSpacing = cellSpacing
     }
+}
 
+class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTableViewDelegate, NSMenuDelegate {
     private enum Section: CaseIterable {
         case main
     }
@@ -47,49 +47,50 @@ open class RunningItemPickerViewController<Item: RunningItem>: NSViewController,
     let searchField = NSSearchField()
 
     private lazy var dataSource = makeDataSource()
+    private var cachedItems: [Item] = []
 
     // MARK: - Subclass Hooks
 
     /// Return the items to display. Called on each reload.
-    open func loadItems() -> [Item] { [] }
+    func loadItems() -> [Item] { [] }
 
     /// Filter items based on search text. Default implementation filters by name.
-    open func filterItems(_ items: [Item], searchText: String) -> [Item] {
+    func filterItems(_ items: [Item], searchText: String) -> [Item] {
         guard !searchText.isEmpty else { return items }
         return items.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
     }
 
     /// Configure the table columns. Subclasses must call `addTableColumn` for each column.
-    open func configureColumns() {}
+    func configureColumns() {}
 
     /// Return a cell view for the given column and item.
-    open func makeCellView(for tableColumn: NSTableColumn, item: Item) -> NSView? { nil }
+    func makeCellView(for tableColumn: NSTableColumn, item: Item) -> NSView? { nil }
 
     /// Return context menu items for the given item.
-    open func contextMenuItems(for item: Item) -> [NSMenuItem] { [] }
+    func contextMenuItems(for item: Item) -> [NSMenuItem] { [] }
 
     /// Called when the user clicks Cancel.
-    open func didCancel() {}
+    func didCancel() {}
 
     /// Called when the user confirms selection.
-    open func didConfirm(item: Item) {}
+    func didConfirm(item: Item) {}
 
     /// Called when selection changes.
-    open func didSelect(item: Item) {}
+    func didSelect(item: Item) {}
 
     /// Return whether the given item should be selectable.
-    open func shouldSelect(item: Item) -> Bool { true }
+    func shouldSelect(item: Item) -> Bool { true }
 
     /// Return the type-select string for the given item. Default returns name.
-    open func typeSelectString(for item: Item) -> String? { item.name }
+    func typeSelectString(for item: Item) -> String? { item.name }
 
     // MARK: - Lifecycle
 
-    public override func loadView() {
+    override func loadView() {
         view = NSView()
     }
 
-    public override func viewDidLoad() {
+    override func viewDidLoad() {
         super.viewDidLoad()
 
         view.addSubview(scrollView)
@@ -176,14 +177,23 @@ open class RunningItemPickerViewController<Item: RunningItem>: NSViewController,
     // MARK: - Data
 
     func reloadData() {
-        var items = loadItems()
+        cachedItems = loadItems()
+        applyFilter()
+    }
+
+    func updateItems(_ items: [Item], animatingDifferences: Bool = false) {
+        cachedItems = items
+        applyFilter(animatingDifferences: animatingDifferences)
+    }
+
+    func applyFilter(animatingDifferences: Bool = true) {
         let searchText = searchField.stringValue
-        items = filterItems(items, searchText: searchText)
+        let items = filterItems(cachedItems, searchText: searchText)
 
         var snapshot = Snapshot()
         snapshot.appendSections([.main])
         snapshot.appendItems(items, toSection: .main)
-        dataSource.apply(snapshot, animatingDifferences: true)
+        dataSource.apply(snapshot, animatingDifferences: animatingDifferences)
     }
 
     func itemForRow(_ row: Int) -> Item? {
@@ -224,7 +234,13 @@ open class RunningItemPickerViewController<Item: RunningItem>: NSViewController,
     }
 
     @objc private func searchTextFieldDidChange(_ sender: NSSearchField) {
-        reloadData()
+        applyFilter()
+    }
+
+    func copyToPasteboard(_ string: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(string, forType: .string)
     }
 
     // MARK: - Menu
@@ -246,7 +262,7 @@ open class RunningItemPickerViewController<Item: RunningItem>: NSViewController,
 
     // MARK: - NSTableViewDelegate
 
-    public func tableViewSelectionDidChange(_ notification: Notification) {
+    func tableViewSelectionDidChange(_ notification: Notification) {
         let hasSelection = tableView.selectedRow != NSNotFound
         confirmButton.isEnabled = hasSelection
         if hasSelection, let item = dataSource.itemIdentifier(forRow: tableView.selectedRow) {
@@ -254,19 +270,19 @@ open class RunningItemPickerViewController<Item: RunningItem>: NSViewController,
         }
     }
 
-    public func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
+    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
         guard let item = dataSource.itemIdentifier(forRow: row) else { return true }
         return shouldSelect(item: item)
     }
 
-    public func tableView(_ tableView: NSTableView, typeSelectStringFor tableColumn: NSTableColumn?, row: Int) -> String? {
+    func tableView(_ tableView: NSTableView, typeSelectStringFor tableColumn: NSTableColumn?, row: Int) -> String? {
         guard let item = dataSource.itemIdentifier(forRow: row) else { return nil }
         return typeSelectString(for: item)
     }
 
     // MARK: - NSMenuDelegate
 
-    public func menuNeedsUpdate(_ menu: NSMenu) {
+    func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let row = tableView.clickedRow
         guard row >= 0, let item = dataSource.itemIdentifier(forRow: row) else { return }
@@ -276,6 +292,8 @@ open class RunningItemPickerViewController<Item: RunningItem>: NSViewController,
     }
 
     deinit {
+        #if DEBUG
         print("\(Self.self) deinit")
+        #endif
     }
 }

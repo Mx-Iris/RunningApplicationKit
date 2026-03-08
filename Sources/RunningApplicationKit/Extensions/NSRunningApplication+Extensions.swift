@@ -24,9 +24,10 @@ extension NSRunningApplication {
         return LSApplicationProxy(forIdentifier: bundleIdentifier)
     }
 
+    private static let sandboxEntitlementKey = "com.apple.security.app-sandbox"
+
     var isSandboxed: Bool {
         guard let entitlements = applicationProxy?.entitlements else { return false }
-        guard let isSandboxed = entitlements["com.apple.security.app-sandbox"] as? Bool else { return false }
-        return isSandboxed
+        return entitlements[Self.sandboxEntitlementKey] as? Bool ?? false
     }
 }

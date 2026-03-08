@@ -71,29 +71,3 @@ class LabelTableCellView: TableCellView {
         ])
     }
 }
-
-class CheckboxTableCellView: TableCellView {
-    var isChecked: Bool = false {
-        didSet {
-            checkbox.state = isChecked ? .on : .off
-        }
-    }
-
-    var isEnabled: Bool = false {
-        didSet {
-            checkbox.isEnabled = isEnabled
-        }
-    }
-
-    private let checkbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        addSubview(checkbox)
-        checkbox.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            checkbox.centerYAnchor.constraint(equalTo: centerYAnchor),
-            checkbox.centerXAnchor.constraint(equalTo: centerXAnchor),
-        ])
-    }
-}

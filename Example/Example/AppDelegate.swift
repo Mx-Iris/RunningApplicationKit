@@ -7,8 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         let tabViewController = RunningPickerTabViewController()
-        tabViewController.applicationPickerViewController.delegate = self
-        tabViewController.processPickerViewController.delegate = self
+        tabViewController.delegate = self
 
         let window = NSWindow(contentViewController: tabViewController)
         window.title = "RunningApplicationKit Demo"
@@ -30,8 +29,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-extension AppDelegate: RunningApplicationPickerViewController.Delegate {
-    func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, didConfirmApplication application: RunningApplication) {
+extension AppDelegate: RunningPickerTabViewController.Delegate {
+    func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didConfirmApplication application: RunningApplication) {
         let alert = NSAlert()
         alert.messageText = "Selected Application"
         alert.informativeText = """
@@ -44,13 +43,7 @@ extension AppDelegate: RunningApplicationPickerViewController.Delegate {
         alert.runModal()
     }
 
-    func runningApplicationPickerViewControllerWasCancelled(_ viewController: RunningApplicationPickerViewController) {
-        NSApp.terminate(nil)
-    }
-}
-
-extension AppDelegate: RunningProcessPickerViewController.Delegate {
-    func runningProcessPickerViewController(_ viewController: RunningProcessPickerViewController, didConfirmProcess process: RunningProcess) {
+    func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didConfirmProcess process: RunningProcess) {
         let alert = NSAlert()
         alert.messageText = "Selected Process"
         alert.informativeText = """
@@ -61,7 +54,7 @@ extension AppDelegate: RunningProcessPickerViewController.Delegate {
         alert.runModal()
     }
 
-    func runningProcessPickerViewControllerWasCancelled(_ viewController: RunningProcessPickerViewController) {
+    func runningPickerTabViewControllerWasCancelled(_ viewController: RunningPickerTabViewController) {
         NSApp.terminate(nil)
     }
 }

@@ -3,7 +3,6 @@ import AppKit
 public struct RunningApplication: RunningItem {
     public let processIdentifier: pid_t
     public let name: String
-    public let localizedName: String?
     public let bundleIdentifier: String?
     public let bundleURL: URL?
     public let executableURL: URL?
@@ -21,7 +20,6 @@ public struct RunningApplication: RunningItem {
     public init(from app: NSRunningApplication) {
         self.processIdentifier = app.processIdentifier
         self.name = app.localizedName ?? "Unknown"
-        self.localizedName = app.localizedName
         self.bundleIdentifier = app.bundleIdentifier
         self.bundleURL = app.bundleURL
         self.executableURL = app.executableURL

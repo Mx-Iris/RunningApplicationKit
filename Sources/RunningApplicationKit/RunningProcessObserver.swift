@@ -70,49 +70,30 @@ public actor RunningProcessObserver {
     }
 
     private nonisolated func findMatchingPIDs() async -> Set<pid_t> {
-        let bufferSize = proc_listpids(UInt32(PROC_ALL_PIDS), 0, nil, 0)
-        guard bufferSize > 0 else { return [] }
-
-        let pidCount = Int(bufferSize) / MemoryLayout<pid_t>.size
-        var pids = [pid_t](repeating: 0, count: pidCount)
-        let actualSize = proc_listpids(UInt32(PROC_ALL_PIDS), 0, &pids, bufferSize)
-        guard actualSize > 0 else { return [] }
-
-        let actualCount = Int(actualSize) / MemoryLayout<pid_t>.size
-        var matchingPIDs: Set<pid_t> = []
-
         let target = await self.target
 
-        for i in 0..<actualCount {
-            let pid = pids[i]
-            guard pid > 0 else { continue }
+        switch target {
+        case .pid(let targetPID):
+            // Direct check via kill(pid, 0) avoids enumerating all processes
+            return ProcessInfo.isRunning(pid: targetPID) ? [targetPID] : []
 
-            switch target {
-            case .pid(let targetPID):
-                if pid == targetPID {
+        case .name(let targetName):
+            var matchingPIDs: Set<pid_t> = []
+            for pid in ProcessInfo.allPIDs() {
+                if ProcessInfo.name(for: pid) == targetName {
                     matchingPIDs.insert(pid)
                 }
-            case .name(let targetName):
-                var nameBuffer = [CChar](repeating: 0, count: Int(MAXCOMLEN) + 1)
-                let nameLength = proc_name(pid, &nameBuffer, UInt32(nameBuffer.count))
-                if nameLength > 0 {
-                    let name = String(cString: nameBuffer)
-                    if name == targetName {
-                        matchingPIDs.insert(pid)
-                    }
-                }
-            case .executablePath(let targetPath):
-                var pathBuffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
-                let pathLength = proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count))
-                if pathLength > 0 {
-                    let path = String(cString: pathBuffer)
-                    if path == targetPath {
-                        matchingPIDs.insert(pid)
-                    }
+            }
+            return matchingPIDs
+
+        case .executablePath(let targetPath):
+            var matchingPIDs: Set<pid_t> = []
+            for pid in ProcessInfo.allPIDs() {
+                if ProcessInfo.executablePath(for: pid) == targetPath {
+                    matchingPIDs.insert(pid)
                 }
             }
+            return matchingPIDs
         }
-
-        return matchingPIDs
     }
 }
