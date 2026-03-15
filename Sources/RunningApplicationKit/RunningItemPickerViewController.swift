@@ -48,6 +48,8 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
 
     private lazy var dataSource = makeDataSource()
     private var cachedItems: [Item] = []
+    private var sortColumnIdentifier: String?
+    private var sortAscending: Bool = true
 
     // MARK: - Subclass Hooks
 
@@ -83,6 +85,9 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
 
     /// Return the type-select string for the given item. Default returns name.
     func typeSelectString(for item: Item) -> String? { item.name }
+
+    /// Compare two items for sorting by the given column. Return `.orderedSame` for non-sortable columns.
+    func compareItems(_ lhs: Item, _ rhs: Item, columnIdentifier: String) -> ComparisonResult { .orderedSame }
 
     // MARK: - Lifecycle
 
@@ -147,6 +152,7 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
         } else {
             searchField.controlSize = .large
         }
+        searchField.refusesFirstResponder = true
         searchField.target = self
         searchField.action = #selector(searchTextFieldDidChange(_:))
 
@@ -188,12 +194,27 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
 
     func applyFilter(animatingDifferences: Bool = true) {
         let searchText = searchField.stringValue
-        let items = filterItems(cachedItems, searchText: searchText)
+        var items = filterItems(cachedItems, searchText: searchText)
+
+        if let sortColumnIdentifier {
+            let ascending = sortAscending
+            items.sort { lhs, rhs in
+                let result = compareItems(lhs, rhs, columnIdentifier: sortColumnIdentifier)
+                return ascending ? result == .orderedAscending : result == .orderedDescending
+            }
+        }
+
+        // Preserve selection across snapshot updates
+        let selectedItem = tableView.selectedRow >= 0 ? dataSource.itemIdentifier(forRow: tableView.selectedRow) : nil
 
         var snapshot = Snapshot()
         snapshot.appendSections([.main])
         snapshot.appendItems(items, toSection: .main)
         dataSource.apply(snapshot, animatingDifferences: animatingDifferences)
+
+        if let selectedItem, let row = dataSource.row(forItemIdentifier: selectedItem), row >= 0 {
+            tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        }
     }
 
     func itemForRow(_ row: Int) -> Item? {
@@ -218,6 +239,9 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
         if let minWidth { column.minWidth = minWidth }
         if let maxWidth { column.maxWidth = maxWidth }
         if let headerAlignment { column.headerCell.alignment = headerAlignment }
+        if !title.isEmpty {
+            column.sortDescriptorPrototype = NSSortDescriptor(key: identifier, ascending: true)
+        }
         tableView.addTableColumn(column)
     }
 
@@ -278,6 +302,30 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
     func tableView(_ tableView: NSTableView, typeSelectStringFor tableColumn: NSTableColumn?, row: Int) -> String? {
         guard let item = dataSource.itemIdentifier(forRow: row) else { return nil }
         return typeSelectString(for: item)
+    }
+
+    func tableView(_ tableView: NSTableView, didClick tableColumn: NSTableColumn) {
+        guard tableColumn.sortDescriptorPrototype != nil else { return }
+        let columnIdentifier = tableColumn.identifier.rawValue
+
+        if sortColumnIdentifier == columnIdentifier {
+            if sortAscending {
+                sortAscending = false
+            } else {
+                sortColumnIdentifier = nil
+            }
+        } else {
+            sortColumnIdentifier = columnIdentifier
+            sortAscending = true
+        }
+
+        if let sortColumnIdentifier {
+            tableView.sortDescriptors = [NSSortDescriptor(key: sortColumnIdentifier, ascending: sortAscending)]
+        } else {
+            tableView.sortDescriptors = []
+        }
+
+        applyFilter(animatingDifferences: false)
     }
 
     // MARK: - NSMenuDelegate

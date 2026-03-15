@@ -33,13 +33,13 @@ public actor RunningProcessObserver {
         pollingTask = Task { [weak self] in
             guard let self else { return }
             // Initial scan
-            let initialPIDs = await self.findMatchingPIDs()
+            let initialPIDs = self.findMatchingPIDs()
             await self.updateKnownPIDs(initialPIDs)
 
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(pollingInterval * 1_000_000_000))
                 guard !Task.isCancelled else { break }
-                let currentPIDs = await self.findMatchingPIDs()
+                let currentPIDs = self.findMatchingPIDs()
                 await self.diffAndNotify(currentPIDs)
             }
         }
@@ -69,18 +69,18 @@ public actor RunningProcessObserver {
         knownPIDs = currentPIDs
     }
 
-    private nonisolated func findMatchingPIDs() async -> Set<pid_t> {
-        let target = await self.target
+    private nonisolated func findMatchingPIDs() -> Set<pid_t> {
+        let target = self.target
 
         switch target {
         case .pid(let targetPID):
             // Direct check via kill(pid, 0) avoids enumerating all processes
-            return ProcessInfo.isRunning(pid: targetPID) ? [targetPID] : []
+            return BSDProcess.isRunning(pid: targetPID) ? [targetPID] : []
 
         case .name(let targetName):
             var matchingPIDs: Set<pid_t> = []
-            for pid in ProcessInfo.allPIDs() {
-                if ProcessInfo.name(for: pid) == targetName {
+            for pid in BSDProcess.allPIDs() {
+                if BSDProcess.name(for: pid) == targetName {
                     matchingPIDs.insert(pid)
                 }
             }
@@ -88,8 +88,8 @@ public actor RunningProcessObserver {
 
         case .executablePath(let targetPath):
             var matchingPIDs: Set<pid_t> = []
-            for pid in ProcessInfo.allPIDs() {
-                if ProcessInfo.executablePath(for: pid) == targetPath {
+            for pid in BSDProcess.allPIDs() {
+                if BSDProcess.executablePath(for: pid) == targetPath {
                     matchingPIDs.insert(pid)
                 }
             }

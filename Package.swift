@@ -1,4 +1,4 @@
-// swift-tools-version: 5.10
+// swift-tools-version: 6.2
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -12,18 +12,10 @@ let package = Package(
             targets: ["RunningApplicationKit"]
         ),
     ],
-    dependencies: [
-        .package(
-            url: "https://github.com/MxIris-Reverse-Engineering/LaunchServicesPrivate",
-            from: "0.1.0"
-        ),
-    ],
     targets: [
         .target(
-            name: "RunningApplicationKit",
-            dependencies: [
-                .product(name: "LaunchServicesPrivate", package: "LaunchServicesPrivate")
-            ]
+            name: "RunningApplicationKit"
         ),
-    ]
+    ],
+    swiftLanguageModes: [.v6],
 )

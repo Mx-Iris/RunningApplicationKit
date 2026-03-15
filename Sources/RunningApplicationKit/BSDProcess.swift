@@ -1,7 +1,7 @@
 import Darwin
 import MachO
 
-enum ProcessInfo {
+enum BSDProcess {
     static func allPIDs() -> [pid_t] {
         let bufferSize = proc_listpids(UInt32(PROC_ALL_PIDS), 0, nil, 0)
         guard bufferSize > 0 else { return [] }
@@ -18,17 +18,25 @@ enum ProcessInfo {
     static func name(for pid: pid_t) -> String? {
         var buffer = [CChar](repeating: 0, count: Int(MAXCOMLEN) + 1)
         let length = proc_name(pid, &buffer, UInt32(buffer.count))
-        return length > 0 ? String(cString: buffer) : nil
+        guard length > 0 else { return nil }
+        return buffer.withUnsafeBufferPointer { ptr in
+            String(decoding: UnsafeRawBufferPointer(ptr).prefix(Int(length)), as: UTF8.self)
+        }
     }
 
     static func executablePath(for pid: pid_t) -> String? {
         var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
-        return length > 0 ? String(cString: buffer) : nil
+        guard length > 0 else { return nil }
+        return buffer.withUnsafeBufferPointer { ptr in
+            String(decoding: UnsafeRawBufferPointer(ptr).prefix(Int(length)), as: UTF8.self)
+        }
     }
 
     static func isRunning(pid: pid_t) -> Bool {
-        kill(pid, 0) == 0
+        // kill(pid, 0) returns 0 if we have permission, or -1 with EPERM if the process
+        // exists but belongs to another user. Both cases mean the process is running.
+        kill(pid, 0) == 0 || errno == EPERM
     }
 
     // MARK: - Architecture Detection

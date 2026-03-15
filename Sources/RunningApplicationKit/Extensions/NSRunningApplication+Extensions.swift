@@ -1,5 +1,4 @@
 import AppKit
-import LaunchServicesPrivate
 
 extension NSRunningApplication {
     var architecture: Architecture {
@@ -19,15 +18,20 @@ extension NSRunningApplication {
         }
     }
 
-    var applicationProxy: LSApplicationProxy? {
-        guard let bundleIdentifier else { return nil }
-        return LSApplicationProxy(forIdentifier: bundleIdentifier)
-    }
-
     private static let sandboxEntitlementKey = "com.apple.security.app-sandbox"
 
     var isSandboxed: Bool {
-        guard let entitlements = applicationProxy?.entitlements else { return false }
+        guard let bundleIdentifier else { return false }
+        guard let proxyClass = NSClassFromString("LSApplicationProxy") as? NSObject.Type else { return false }
+
+        let proxySelector = NSSelectorFromString("applicationProxyForIdentifier:")
+        guard proxyClass.responds(to: proxySelector),
+              let proxy = proxyClass.perform(proxySelector, with: bundleIdentifier)?.takeUnretainedValue() as? NSObject else { return false }
+
+        let entitlementsSelector = NSSelectorFromString("entitlements")
+        guard proxy.responds(to: entitlementsSelector),
+              let entitlements = proxy.perform(entitlementsSelector)?.takeUnretainedValue() as? [String: Any] else { return false }
+
         return entitlements[Self.sandboxEntitlementKey] as? Bool ?? false
     }
 }

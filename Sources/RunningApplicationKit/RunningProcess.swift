@@ -36,8 +36,60 @@ public struct RunningProcess: RunningItem {
 
 public enum RunningProcessEnumerator {
     // Caches keyed by executable path — icon and architecture don't change for a given binary
-    private static var iconCache: [String: NSImage] = [:]
-    private static var architectureCache: [String: Architecture?] = [:]
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var iconCache: [String: NSImage] = [:]
+    nonisolated(unsafe) private static var architectureCache: [String: Architecture?] = [:]
+
+    /// Build a single `RunningProcess` for the given PID. Returns nil if the process name cannot be determined.
+    public static func makeProcess(for pid: pid_t) -> RunningProcess? {
+        let executablePath = BSDProcess.executablePath(for: pid)
+
+        let name: String
+        if let procName = BSDProcess.name(for: pid) {
+            name = procName
+        } else if let executablePath {
+            name = (executablePath as NSString).lastPathComponent
+        } else {
+            return nil
+        }
+
+        let icon: NSImage?
+        if let executablePath {
+            icon = cacheLock.withLock {
+                if let cached = iconCache[executablePath] {
+                    return cached
+                }
+                let loaded = NSWorkspace.shared.icon(forFile: executablePath)
+                iconCache[executablePath] = loaded
+                return loaded
+            }
+        } else {
+            icon = nil
+        }
+
+        let architecture: Architecture?
+        if let executablePath {
+            architecture = cacheLock.withLock {
+                if let cached = architectureCache[executablePath] {
+                    return cached
+                }
+                let detected = BSDProcess.architecture(for: pid)
+                architectureCache[executablePath] = detected
+                return detected
+            }
+        } else {
+            architecture = BSDProcess.architecture(for: pid)
+        }
+
+        return RunningProcess(
+            processIdentifier: pid,
+            name: name,
+            executablePath: executablePath,
+            icon: icon,
+            architecture: architecture,
+            isSandboxed: BSDProcess.isSandboxed(pid: pid)
+        )
+    }
 
     /// List all running processes, excluding those that are NSRunningApplications.
     public static func listProcesses(excludingApplications: Bool = true) -> [RunningProcess] {
@@ -48,60 +100,9 @@ public enum RunningProcessEnumerator {
             appPIDs = []
         }
 
-        var processes: [RunningProcess] = []
-
-        for pid in ProcessInfo.allPIDs() {
-            guard !appPIDs.contains(pid) else { continue }
-
-            let executablePath = ProcessInfo.executablePath(for: pid)
-
-            // Get process name, fallback to path basename
-            let name: String
-            if let procName = ProcessInfo.name(for: pid) {
-                name = procName
-            } else if let executablePath {
-                name = (executablePath as NSString).lastPathComponent
-            } else {
-                continue
-            }
-
-            let icon: NSImage?
-            if let executablePath {
-                if let cached = iconCache[executablePath] {
-                    icon = cached
-                } else {
-                    let loaded = NSWorkspace.shared.icon(forFile: executablePath)
-                    iconCache[executablePath] = loaded
-                    icon = loaded
-                }
-            } else {
-                icon = nil
-            }
-
-            let architecture: Architecture?
-            if let executablePath {
-                if let cached = architectureCache[executablePath] {
-                    architecture = cached
-                } else {
-                    let detected = ProcessInfo.architecture(for: pid)
-                    architectureCache[executablePath] = detected
-                    architecture = detected
-                }
-            } else {
-                architecture = ProcessInfo.architecture(for: pid)
-            }
-
-            let process = RunningProcess(
-                processIdentifier: pid,
-                name: name,
-                executablePath: executablePath,
-                icon: icon,
-                architecture: architecture,
-                isSandboxed: ProcessInfo.isSandboxed(pid: pid)
-            )
-            processes.append(process)
-        }
-
-        return processes.sorted { $0.processIdentifier < $1.processIdentifier }
+        return BSDProcess.allPIDs()
+            .filter { !appPIDs.contains($0) }
+            .compactMap { makeProcess(for: $0) }
+            .sorted { $0.processIdentifier < $1.processIdentifier }
     }
 }

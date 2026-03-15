@@ -1,11 +1,10 @@
 import AppKit
-import LaunchServicesPrivate
 
 final class RunningApplicationPickerViewController: RunningItemPickerViewController<RunningApplication> {
     typealias Column = RunningPickerTabViewController.ApplicationColumn
     typealias Configuration = RunningPickerTabViewController.ApplicationConfiguration
 
-    protocol Delegate: AnyObject {
+    @MainActor protocol Delegate: AnyObject {
         func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, shouldSelectApplication application: RunningApplication) -> Bool
         func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, didSelectApplication application: RunningApplication)
         func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, didConfirmApplication application: RunningApplication)
@@ -17,6 +16,7 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
     private let workspace = NSWorkspace.shared
 
     private var runningApplicationObservation: NSKeyValueObservation?
+    private var applicationCache: [pid_t: RunningApplication] = [:]
 
     private(set) var configuration: Configuration
 
@@ -35,15 +35,16 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
         preferredContentSize = .init(width: 800, height: 600)
         applyBaseConfiguration(configuration.baseConfiguration)
         setupObservation()
-        reloadData()
     }
 
     // MARK: - Overrides
 
     override func loadItems() -> [RunningApplication] {
-        workspace.runningApplications
+        let apps = workspace.runningApplications
             .filter { $0.processIdentifier > 0 }
             .map { RunningApplication(from: $0) }
+        applicationCache = Dictionary(uniqueKeysWithValues: apps.map { ($0.processIdentifier, $0) })
+        return apps
     }
 
     override func configureColumns() {
@@ -67,26 +68,46 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
                 $0.image = item.icon
             }
         case .name:
-            return tableView.makeView(ofClass: LabelTableCellView.self) {
+            return tableView.makeView(ofClass: NameTableCellView.self) {
                 $0.string = item.name
             }
         case .bundleIdentifier:
-            return tableView.makeView(ofClass: LabelTableCellView.self) {
+            return tableView.makeView(ofClass: BundleIdentifierTableCellView.self) {
                 $0.string = item.bundleIdentifier
             }
         case .pid:
-            return tableView.makeView(ofClass: LabelTableCellView.self) {
+            return tableView.makeView(ofClass: PIDTableCellView.self) {
                 $0.string = "\(item.processIdentifier)"
             }
         case .architecture:
-            return tableView.makeView(ofClass: LabelTableCellView.self) {
+            return tableView.makeView(ofClass: ArchitectureTableCellView.self) {
                 $0.string = item.architecture?.description
             }
         case .sandboxed:
-            return tableView.makeView(ofClass: IconTableCellView.self) {
+            return tableView.makeView(ofClass: StatusIconTableCellView.self) {
                 $0.image = item.isSandboxed ? .checkmarkImage : .xmarkImage
                 $0.tintColor = item.isSandboxed ? .systemGreen : .systemRed
             }
+        }
+    }
+
+    override func compareItems(_ lhs: RunningApplication, _ rhs: RunningApplication, columnIdentifier: String) -> ComparisonResult {
+        guard let column = Column(rawValue: columnIdentifier) else { return .orderedSame }
+        switch column {
+        case .icon:
+            return .orderedSame
+        case .name:
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+        case .bundleIdentifier:
+            return (lhs.bundleIdentifier ?? "").localizedCaseInsensitiveCompare(rhs.bundleIdentifier ?? "")
+        case .pid:
+            return lhs.processIdentifier == rhs.processIdentifier ? .orderedSame :
+                   lhs.processIdentifier < rhs.processIdentifier ? .orderedAscending : .orderedDescending
+        case .architecture:
+            return (lhs.architecture?.description ?? "").compare(rhs.architecture?.description ?? "")
+        case .sandboxed:
+            if lhs.isSandboxed == rhs.isSandboxed { return .orderedSame }
+            return lhs.isSandboxed ? .orderedAscending : .orderedDescending
         }
     }
 
@@ -102,6 +123,14 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
             copyBundleID.target = self
             copyBundleID.representedObject = item
             items.append(copyBundleID)
+        }
+
+        if item.bundleURL != nil {
+            items.append(.separator())
+            let showInFinder = NSMenuItem(title: "Show in Finder", action: #selector(showInFinderAction(_:)), keyEquivalent: "")
+            showInFinder.target = self
+            showInFinder.representedObject = item
+            items.append(showInFinder)
         }
         return items
     }
@@ -126,9 +155,32 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
 
     private func setupObservation() {
         runningApplicationObservation = workspace.observe(\.runningApplications) { [weak self] _, _ in
-            guard let self else { return }
-            self.reloadData()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.handleRunningApplicationsChange()
+            }
         }
+    }
+
+    private func handleRunningApplicationsChange() {
+        let currentApps = workspace.runningApplications.filter { $0.processIdentifier > 0 }
+        let currentPIDs = Set(currentApps.map(\.processIdentifier))
+        let cachedPIDs = Set(applicationCache.keys)
+
+        let addedPIDs = currentPIDs.subtracting(cachedPIDs)
+        let removedPIDs = cachedPIDs.subtracting(currentPIDs)
+
+        guard !addedPIDs.isEmpty || !removedPIDs.isEmpty else { return }
+
+        for pid in removedPIDs {
+            applicationCache.removeValue(forKey: pid)
+        }
+
+        for app in currentApps where addedPIDs.contains(app.processIdentifier) {
+            applicationCache[app.processIdentifier] = RunningApplication(from: app)
+        }
+
+        updateItems(Array(applicationCache.values))
     }
 
     @objc private func copyPIDAction(_ sender: NSMenuItem) {
@@ -139,6 +191,11 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
     @objc private func copyBundleIDAction(_ sender: NSMenuItem) {
         guard let item = sender.representedObject as? RunningApplication, let bundleID = item.bundleIdentifier else { return }
         copyToPasteboard(bundleID)
+    }
+
+    @objc private func showInFinderAction(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? RunningApplication, let bundleURL = item.bundleURL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([bundleURL])
     }
 }
 

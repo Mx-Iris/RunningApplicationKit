@@ -39,6 +39,18 @@ class IconTableCellView: TableCellView {
     }
 }
 
+class StatusIconTableCellView: IconTableCellView {}
+
+class NameTableCellView: LabelTableCellView {}
+
+class BundleIdentifierTableCellView: LabelTableCellView {}
+
+class PIDTableCellView: LabelTableCellView {}
+
+class ArchitectureTableCellView: LabelTableCellView {}
+
+class ExecutablePathTableCellView: LabelTableCellView {}
+
 class LabelTableCellView: TableCellView {
     var string: String? {
         didSet {
