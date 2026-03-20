@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Test
 
-This is a pure Swift Package Manager library (no Xcode project).
+Pure Swift Package Manager library. No Xcode project, no external dependencies.
 
 ```bash
 swift package update && swift build 2>&1 | xcsift
@@ -12,30 +12,39 @@ swift package update && swift build 2>&1 | xcsift
 
 There are no tests in this project.
 
+An Example app lives in `Example/` with its own `.xcodeproj` (depends on the library via local path).
+
+## Key Constraints
+
+- **Swift 6 strict concurrency** (`swift-tools-version: 6.2`, `swiftLanguageModes: [.v6]`). All new code must satisfy `Sendable` checking and actor isolation rules.
+- **macOS 11+ deployment target**, but some UI code gates on newer OS versions (e.g., `NSSearchField.controlSize = .extraLarge` on macOS 26+).
+
 ## Architecture
 
-RunningApplicationKit is a macOS library (minimum macOS 11) providing components for working with running applications and system processes.
+RunningApplicationKit provides data models, observers, and picker UI for macOS running applications and BSD processes.
 
-### Data Models
+### Public API Boundary
 
-- **`RunningItem`** — Protocol defining the common interface (`pid`, `name`, `icon`, `architecture`) shared by both application and process models.
-- **`RunningApplication`** — Value type wrapping `NSRunningApplication` with pid, name, bundleIdentifier, icon, architecture, and isSandboxed.
-- **`RunningProcess`** — Value type representing a BSD process with pid, name, executablePath, icon, and architecture. Enumerated via `RunningProcessEnumerator` using `proc_listpids`/`proc_pidpath`.
-- **`Architecture`** — Standalone enum (x86_64, arm64, i386, ppc, ppc64, unknown) used by both models.
+Only `RunningPickerTabViewController` (and its configuration/delegate/column types), `RunningApplication`, `RunningProcess`, `RunningProcessEnumerator`, `RunningItem`, `Architecture`, and the two observer actors are `public`. The individual picker view controllers (`RunningApplicationPickerViewController`, `RunningProcessPickerViewController`) and the base class `RunningItemPickerViewController` are `internal` — consumers interact through the tab VC.
 
-### Observers
+### Concurrency Model
 
-- **`RunningApplicationObserver`** — A Swift actor that uses KVO on `NSWorkspace.runningApplications` to observe launch/termination of a specific app by bundle identifier. Exposes async `onLaunch`/`onTerminate` callback setters and `start()`/`stop()` lifecycle methods.
-- **`RunningProcessObserver`** — A Swift actor that uses timer-based polling of `proc_listpids` to detect process launch/termination. Supports targeting by `.pid`, `.name`, or `.executablePath`.
+- **Observers** (`RunningApplicationObserver`, `RunningProcessObserver`) are Swift `actor` types. `RunningApplicationObserver` uses KVO; `RunningProcessObserver` uses async `Task`-based polling.
+- **Picker VCs** are `@MainActor` (implicit via `NSViewController`). `RunningProcessPickerViewController` offloads process enumeration to a background `DispatchQueue` and bounces results back to main.
+- **`RunningProcessEnumerator`** guards its icon/architecture caches with `NSLock` and `nonisolated(unsafe)` storage.
 
-### UI Components
+### Low-Level System APIs
 
-- **`RunningItemPickerViewController<Item: RunningItem>`** — Generic base class providing common picker UI: title/description labels, search field, table view with `NSTableViewDiffableDataSource`, cancel/confirm buttons, and context menu support. Subclasses override hooks (`loadItems()`, `configureColumns()`, `makeCellView(for:item:)`, etc.).
-- **`RunningApplicationPickerViewController`** — Inherits base class with `RunningApplication`. Columns: icon, name, bundleIdentifier, pid, architecture, sandboxed. Sandbox detection uses `LSApplicationProxy` from **LaunchServicesPrivate**.
-- **`RunningProcessPickerViewController`** — Inherits base class with `RunningProcess`. Columns: icon, name, pid, architecture, executablePath. Timer-based refresh of the process list.
-- **`RunningPickerTabViewController`** — `NSTabViewController` wrapping both pickers in "Applications" and "Processes" tabs.
+`BSDProcess` (internal) wraps several C/Darwin APIs — understanding these is important when debugging or extending process-related features:
 
-### Shared Components
+- `proc_listpids` / `proc_pidpath` / `proc_name` — BSD process enumeration
+- Mach-O header reading (`mach_header_64`, `fat_header`) — architecture detection from executable binaries
+- `sysctl` with `KERN_PROC_PID` — Rosetta translation detection via `p_flag & P_TRANSLATED`
+- `csops` loaded via `dlsym` — code-signing status / sandbox detection
+- `LSApplicationProxy` accessed via `NSClassFromString` runtime reflection — entitlement-based sandbox detection for applications
 
-- **`TableCellViews.swift`** — Shared cell view classes (`IconTableCellView`, `LabelTableCellView`, `CheckboxTableCellView`).
-- **`Extensions/`** — `NSTableView` (typed cell view reuse), `NSRunningApplication` (architecture, sandbox check), `NSImage` (SF Symbol constants).
+### UI Inheritance Chain
+
+`RunningItemPickerViewController<Item: RunningItem>` is a generic base class providing: search field, `NSTableViewDiffableDataSource`, column sorting, context menus, cancel/confirm buttons. Subclasses override hooks (`loadItems()`, `configureColumns()`, `makeCellView(for:item:)`, `compareItems(_:_:columnIdentifier:)`, etc.).
+
+Cell views in `TableCellViews.swift` use distinct subclasses per column type (e.g., `NameTableCellView`, `PIDTableCellView`) — this enables `NSTableView` cell reuse by class identity via the `NSTableView.makeView(ofClass:modify:)` extension.
