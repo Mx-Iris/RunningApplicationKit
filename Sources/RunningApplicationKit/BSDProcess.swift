@@ -1,5 +1,6 @@
 import Darwin
 import MachO
+import Security
 
 enum BSDProcess {
     static func allPIDs() -> [pid_t] {
@@ -121,16 +122,23 @@ enum BSDProcess {
     // MARK: - Sandbox Detection
 
     static func isSandboxed(pid: pid_t) -> Bool {
-        // csops(pid, CS_OPS_STATUS, &flags, sizeof(flags))
-        // csops is not exposed in Swift headers, so we load it dynamically
-        var flags: UInt32 = 0
-        let result = csopsFunction(pid, 0 /* CS_OPS_STATUS */, &flags, MemoryLayout<UInt32>.size)
-        guard result == 0 else { return false }
-        // CS_SANDBOX = 0x00000100
-        return (flags & 0x00000100) != 0
-    }
+        let attributes = [kSecGuestAttributePid: pid] as CFDictionary
+        var code: SecCode?
+        guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess,
+              let code else { return false }
 
-    private static let csopsFunction: @convention(c) (pid_t, UInt32, UnsafeMutableRawPointer?, Int) -> Int32 = {
-        unsafeBitCast(dlsym(dlopen(nil, RTLD_LAZY), "csops"), to: (@convention(c) (pid_t, UInt32, UnsafeMutableRawPointer?, Int) -> Int32).self)
-    }()
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess,
+              let staticCode else { return false }
+
+        var info: CFDictionary?
+        guard SecCodeCopySigningInformation(
+            staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info
+        ) == errSecSuccess, let info = info as? [String: Any] else { return false }
+
+        guard let entitlements = info[kSecCodeInfoEntitlementsDict as String] as? [String: Any] else {
+            return false
+        }
+        return entitlements["com.apple.security.app-sandbox"] as? Bool ?? false
+    }
 }

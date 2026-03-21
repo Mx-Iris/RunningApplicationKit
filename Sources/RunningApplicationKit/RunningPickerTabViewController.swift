@@ -230,6 +230,10 @@ public final class RunningPickerTabViewController: NSTabViewController {
 
         addTabViewItem(appTabItem)
         addTabViewItem(processTabItem)
+
+        // Start loading process data in the background immediately so it's
+        // ready (or mostly ready) by the time the user switches to the Process tab.
+        processPickerViewController.prefetch()
     }
 }
 

@@ -34,6 +34,7 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
         preferredContentSize = .init(width: 800, height: 600)
         applyBaseConfiguration(configuration.baseConfiguration)
         startRefreshTimer()
+        refreshInBackground()
     }
 
     override func viewWillDisappear() {
@@ -50,9 +51,11 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
     // MARK: - Overrides
 
     override func loadItems() -> [RunningProcess] {
-        let processes = RunningProcessEnumerator.listProcesses(excludingApplications: true)
-        processCache = Dictionary(uniqueKeysWithValues: processes.map { ($0.processIdentifier, $0) })
-        return processes
+        // Return whatever has been prefetched so far. If prefetch() was called
+        // early (e.g. by TabVC), this may already contain the full process list,
+        // avoiding an empty-table flash. Otherwise returns empty and
+        // refreshInBackground() will populate the table asynchronously.
+        Array(processCache.values)
     }
 
     override func configureColumns() {
@@ -175,6 +178,12 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
         refreshTimer = nil
     }
 
+    /// Start background process enumeration early, before the view is loaded.
+    /// Called by the parent tab view controller so data is ready when the user switches tabs.
+    func prefetch() {
+        refreshInBackground()
+    }
+
     private func refreshInBackground() {
         let cachedPIDs = Set(processCache.keys)
         let appPIDs = Set(NSWorkspace.shared.runningApplications.map(\.processIdentifier))
@@ -187,12 +196,18 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
 
             guard !addedPIDs.isEmpty || !removedPIDs.isEmpty else { return }
 
-            // Only create RunningProcess for newly appeared PIDs (expensive)
+            // Phase 1: Create processes without icons (fast — no icon I/O)
             var newProcesses: [pid_t: RunningProcess] = [:]
             for pid in addedPIDs {
-                if let process = RunningProcessEnumerator.makeProcess(for: pid) {
+                if let process = RunningProcessEnumerator.makeProcess(for: pid, loadIcon: false) {
                     newProcesses[pid] = process
                 }
+            }
+
+            // Collect paths that need icon loading
+            let pathsForIcons = newProcesses.compactMap { (pid, process) -> (pid_t, String)? in
+                guard let path = process.executablePath else { return nil }
+                return (pid, path)
             }
 
             DispatchQueue.main.async {
@@ -203,7 +218,42 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
                 for (pid, process) in newProcesses {
                     self.processCache[pid] = process
                 }
-                self.updateItems(Array(self.processCache.values))
+                if self.isViewLoaded {
+                    self.updateItems(Array(self.processCache.values))
+                }
+
+                // Kick off phase 2: load icons asynchronously
+                if !pathsForIcons.isEmpty {
+                    self.loadIconsInBackground(for: pathsForIcons)
+                }
+            }
+        }
+    }
+
+    /// Phase 2: Load icons on a background queue, then update the process cache on the main thread.
+    private func loadIconsInBackground(for entries: [(pid_t, String)]) {
+        backgroundQueue.async { [weak self] in
+            var iconsByPID: [pid_t: NSImage] = [:]
+            for (pid, path) in entries {
+                iconsByPID[pid] = RunningProcessEnumerator.loadCachedIcon(for: path)
+            }
+
+            DispatchQueue.main.async {
+                guard let self else { return }
+                for (pid, icon) in iconsByPID {
+                    guard let existing = self.processCache[pid] else { continue }
+                    self.processCache[pid] = RunningProcess(
+                        processIdentifier: existing.processIdentifier,
+                        name: existing.name,
+                        executablePath: existing.executablePath,
+                        icon: icon,
+                        architecture: existing.architecture,
+                        isSandboxed: existing.isSandboxed
+                    )
+                }
+                if self.isViewLoaded {
+                    self.updateItems(Array(self.processCache.values))
+                }
             }
         }
     }

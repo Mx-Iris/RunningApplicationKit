@@ -41,7 +41,8 @@ public enum RunningProcessEnumerator {
     nonisolated(unsafe) private static var architectureCache: [String: Architecture?] = [:]
 
     /// Build a single `RunningProcess` for the given PID. Returns nil if the process name cannot be determined.
-    public static func makeProcess(for pid: pid_t) -> RunningProcess? {
+    /// When `loadIcon` is false, the icon field is nil — use `loadCachedIcon(for:)` separately to load it later.
+    public static func makeProcess(for pid: pid_t, loadIcon: Bool = true) -> RunningProcess? {
         let executablePath = BSDProcess.executablePath(for: pid)
 
         let name: String
@@ -54,28 +55,22 @@ public enum RunningProcessEnumerator {
         }
 
         let icon: NSImage?
-        if let executablePath {
-            icon = cacheLock.withLock {
-                if let cached = iconCache[executablePath] {
-                    return cached
-                }
-                let loaded = NSWorkspace.shared.icon(forFile: executablePath)
-                iconCache[executablePath] = loaded
-                return loaded
-            }
+        if loadIcon, let executablePath {
+            icon = loadCachedIcon(for: executablePath)
         } else {
             icon = nil
         }
 
         let architecture: Architecture?
         if let executablePath {
-            architecture = cacheLock.withLock {
-                if let cached = architectureCache[executablePath] {
-                    return cached
-                }
+            // Check cache under lock, load outside lock to avoid holding it during I/O
+            let cached: Architecture?? = cacheLock.withLock { architectureCache[executablePath] }
+            if let cached {
+                architecture = cached
+            } else {
                 let detected = BSDProcess.architecture(for: pid)
-                architectureCache[executablePath] = detected
-                return detected
+                cacheLock.withLock { architectureCache[executablePath] = detected }
+                architecture = detected
             }
         } else {
             architecture = BSDProcess.architecture(for: pid)
@@ -89,6 +84,17 @@ public enum RunningProcessEnumerator {
             architecture: architecture,
             isSandboxed: BSDProcess.isSandboxed(pid: pid)
         )
+    }
+
+    /// Load and cache icon for the given executable path. Thread-safe; does not hold
+    /// the lock during the (potentially slow) `NSWorkspace.shared.icon(forFile:)` call.
+    static func loadCachedIcon(for path: String) -> NSImage {
+        if let cached = cacheLock.withLock({ iconCache[path] }) {
+            return cached
+        }
+        let loaded = NSWorkspace.shared.icon(forFile: path)
+        cacheLock.withLock { iconCache[path] = loaded }
+        return loaded
     }
 
     /// List all running processes, excluding those that are NSRunningApplications.
