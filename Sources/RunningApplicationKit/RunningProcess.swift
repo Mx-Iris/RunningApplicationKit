@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import UniformTypeIdentifiers
 
 public struct RunningProcess: RunningItem {
     public let processIdentifier: pid_t
@@ -35,14 +36,15 @@ public struct RunningProcess: RunningItem {
 }
 
 public enum RunningProcessEnumerator {
-    // Caches keyed by executable path — icon and architecture don't change for a given binary
     private static let cacheLock = NSLock()
+    // Icon cache keyed by UTType identifier — process icons are just a handful of
+    // distinct types (unix executable, generic document, etc.)
     nonisolated(unsafe) private static var iconCache: [String: NSImage] = [:]
+    // Architecture cache keyed by executable path
     nonisolated(unsafe) private static var architectureCache: [String: Architecture?] = [:]
 
     /// Build a single `RunningProcess` for the given PID. Returns nil if the process name cannot be determined.
-    /// When `loadIcon` is false, the icon field is nil — use `loadCachedIcon(for:)` separately to load it later.
-    public static func makeProcess(for pid: pid_t, loadIcon: Bool = true) -> RunningProcess? {
+    public static func makeProcess(for pid: pid_t) -> RunningProcess? {
         let executablePath = BSDProcess.executablePath(for: pid)
 
         let name: String
@@ -55,7 +57,7 @@ public enum RunningProcessEnumerator {
         }
 
         let icon: NSImage?
-        if loadIcon, let executablePath {
+        if let executablePath {
             icon = loadCachedIcon(for: executablePath)
         } else {
             icon = nil
@@ -86,15 +88,24 @@ public enum RunningProcessEnumerator {
         )
     }
 
-    /// Load and cache icon for the given executable path. Thread-safe; does not hold
-    /// the lock during the (potentially slow) `NSWorkspace.shared.icon(forFile:)` call.
+    /// Load and cache icon based on the file's UTType. Process executables almost always
+    /// map to just two icon types (unix executable or generic document), so caching by
+    /// UTType identifier avoids expensive per-file icon lookups entirely.
     static func loadCachedIcon(for path: String) -> NSImage {
-        if let cached = cacheLock.withLock({ iconCache[path] }) {
+        let ext = URL(fileURLWithPath: path).pathExtension
+        let uttype: UTType = if ext.isEmpty {
+            .unixExecutable
+        } else {
+            UTType(filenameExtension: ext) ?? .data
+        }
+
+        let cacheKey = uttype.identifier
+        if let cached = cacheLock.withLock({ iconCache[cacheKey] }) {
             return cached
         }
-        let loaded = NSWorkspace.shared.icon(forFile: path)
-        cacheLock.withLock { iconCache[path] = loaded }
-        return loaded
+        let icon = NSWorkspace.shared.icon(for: uttype)
+        cacheLock.withLock { iconCache[cacheKey] = icon }
+        return icon
     }
 
     /// List all running processes, excluding those that are NSRunningApplications.
