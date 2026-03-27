@@ -180,7 +180,8 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
             applicationCache[app.processIdentifier] = RunningApplication(from: app)
         }
 
-        updateItems(Array(applicationCache.values))
+        let orderedItems = currentApps.compactMap { applicationCache[$0.processIdentifier] }
+        updateItems(orderedItems, animatingDifferences: true)
     }
 
     @objc private func copyPIDAction(_ sender: NSMenuItem) {
