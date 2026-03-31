@@ -30,6 +30,7 @@ public actor RunningProcessObserver {
     }
 
     public func start() {
+        pollingTask?.cancel()
         pollingTask = Task { [weak self] in
             guard let self else { return }
             // Initial scan

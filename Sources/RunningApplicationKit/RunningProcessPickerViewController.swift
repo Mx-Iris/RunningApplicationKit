@@ -33,8 +33,6 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
         super.viewDidLoad()
         preferredContentSize = .init(width: 800, height: 600)
         applyBaseConfiguration(configuration.baseConfiguration)
-        startRefreshTimer()
-        refreshInBackground()
     }
 
     override func viewWillDisappear() {
@@ -91,10 +89,7 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
                 $0.string = item.architecture?.description
             }
         case .sandboxed:
-            return tableView.makeView(ofClass: StatusIconTableCellView.self) {
-                $0.image = item.isSandboxed ? .checkmarkImage : .xmarkImage
-                $0.tintColor = item.isSandboxed ? .systemGreen : .systemRed
-            }
+            return makeSandboxedCellView(isSandboxed: item.isSandboxed)
         case .executablePath:
             return tableView.makeView(ofClass: ExecutablePathTableCellView.self) {
                 $0.string = item.executablePath
@@ -110,13 +105,11 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
         case .name:
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name)
         case .pid:
-            return lhs.processIdentifier == rhs.processIdentifier ? .orderedSame :
-                   lhs.processIdentifier < rhs.processIdentifier ? .orderedAscending : .orderedDescending
+            return compareNumericValues(lhs.processIdentifier, rhs.processIdentifier)
         case .architecture:
             return (lhs.architecture?.description ?? "").compare(rhs.architecture?.description ?? "")
         case .sandboxed:
-            if lhs.isSandboxed == rhs.isSandboxed { return .orderedSame }
-            return lhs.isSandboxed ? .orderedAscending : .orderedDescending
+            return compareBooleanValues(lhs.isSandboxed, rhs.isSandboxed)
         case .executablePath:
             return (lhs.executablePath ?? "").localizedCaseInsensitiveCompare(rhs.executablePath ?? "")
         }

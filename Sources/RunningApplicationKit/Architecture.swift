@@ -1,5 +1,3 @@
-import Foundation
-
 public enum Architecture: CustomStringConvertible, Hashable, Sendable {
     case x86_64
     case arm64

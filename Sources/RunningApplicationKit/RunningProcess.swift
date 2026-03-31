@@ -40,8 +40,11 @@ public enum RunningProcessEnumerator {
     // Icon cache keyed by UTType identifier — process icons are just a handful of
     // distinct types (unix executable, generic document, etc.)
     nonisolated(unsafe) private static var iconCache: [String: NSImage] = [:]
-    // Architecture cache keyed by executable path
+    // Architecture cache keyed by executable path — lookup returns Architecture??
+    // where outer nil = cache miss, inner nil = architecture undetectable
     nonisolated(unsafe) private static var architectureCache: [String: Architecture?] = [:]
+    // Sandbox status cache keyed by executable path
+    nonisolated(unsafe) private static var sandboxCache: [String: Bool] = [:]
 
     /// Build a single `RunningProcess` for the given PID. Returns nil if the process name cannot be determined.
     public static func makeProcess(for pid: pid_t) -> RunningProcess? {
@@ -78,13 +81,27 @@ public enum RunningProcessEnumerator {
             architecture = BSDProcess.architecture(for: pid)
         }
 
+        let isSandboxed: Bool
+        if let executablePath {
+            let cached = cacheLock.withLock { sandboxCache[executablePath] }
+            if let cached {
+                isSandboxed = cached
+            } else {
+                let detected = BSDProcess.isSandboxed(pid: pid)
+                cacheLock.withLock { sandboxCache[executablePath] = detected }
+                isSandboxed = detected
+            }
+        } else {
+            isSandboxed = BSDProcess.isSandboxed(pid: pid)
+        }
+
         return RunningProcess(
             processIdentifier: pid,
             name: name,
             executablePath: executablePath,
             icon: icon,
             architecture: architecture,
-            isSandboxed: BSDProcess.isSandboxed(pid: pid)
+            isSandboxed: isSandboxed
         )
     }
 

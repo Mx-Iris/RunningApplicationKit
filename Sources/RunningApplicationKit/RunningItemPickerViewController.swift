@@ -245,6 +245,25 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
         tableView.addTableColumn(column)
     }
 
+    // MARK: - Shared Cell & Comparison Helpers
+
+    func makeSandboxedCellView(isSandboxed: Bool) -> NSView {
+        tableView.makeView(ofClass: StatusIconTableCellView.self) {
+            $0.image = isSandboxed ? .checkmarkImage : .xmarkImage
+            $0.tintColor = isSandboxed ? .systemGreen : .systemRed
+        }
+    }
+
+    func compareNumericValues<T: Comparable>(_ lhs: T, _ rhs: T) -> ComparisonResult {
+        if lhs == rhs { return .orderedSame }
+        return lhs < rhs ? .orderedAscending : .orderedDescending
+    }
+
+    func compareBooleanValues(_ lhs: Bool, _ rhs: Bool) -> ComparisonResult {
+        if lhs == rhs { return .orderedSame }
+        return lhs ? .orderedAscending : .orderedDescending
+    }
+
     // MARK: - Actions
 
     @objc private func cancelAction() {
@@ -252,7 +271,7 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
     }
 
     @objc private func confirmAction() {
-        guard tableView.selectedRow != NSNotFound,
+        guard tableView.selectedRow >= 0,
               let item = dataSource.itemIdentifier(forRow: tableView.selectedRow) else { return }
         didConfirm(item: item)
     }
@@ -287,7 +306,7 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
     // MARK: - NSTableViewDelegate
 
     func tableViewSelectionDidChange(_ notification: Notification) {
-        let hasSelection = tableView.selectedRow != NSNotFound
+        let hasSelection = tableView.selectedRow >= 0
         confirmButton.isEnabled = hasSelection
         if hasSelection, let item = dataSource.itemIdentifier(forRow: tableView.selectedRow) {
             didSelect(item: item)

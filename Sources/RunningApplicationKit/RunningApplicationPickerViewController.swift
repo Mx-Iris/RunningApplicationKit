@@ -84,10 +84,7 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
                 $0.string = item.architecture?.description
             }
         case .sandboxed:
-            return tableView.makeView(ofClass: StatusIconTableCellView.self) {
-                $0.image = item.isSandboxed ? .checkmarkImage : .xmarkImage
-                $0.tintColor = item.isSandboxed ? .systemGreen : .systemRed
-            }
+            return makeSandboxedCellView(isSandboxed: item.isSandboxed)
         }
     }
 
@@ -101,13 +98,11 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
         case .bundleIdentifier:
             return (lhs.bundleIdentifier ?? "").localizedCaseInsensitiveCompare(rhs.bundleIdentifier ?? "")
         case .pid:
-            return lhs.processIdentifier == rhs.processIdentifier ? .orderedSame :
-                   lhs.processIdentifier < rhs.processIdentifier ? .orderedAscending : .orderedDescending
+            return compareNumericValues(lhs.processIdentifier, rhs.processIdentifier)
         case .architecture:
             return (lhs.architecture?.description ?? "").compare(rhs.architecture?.description ?? "")
         case .sandboxed:
-            if lhs.isSandboxed == rhs.isSandboxed { return .orderedSame }
-            return lhs.isSandboxed ? .orderedAscending : .orderedDescending
+            return compareBooleanValues(lhs.isSandboxed, rhs.isSandboxed)
         }
     }
 
