@@ -57,79 +57,48 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
     }
 
     override func configureColumns() {
-        for column in configuration.allowsColumns {
-            addTableColumn(
-                identifier: column.rawValue,
-                title: column.title,
-                preferredWidth: column.preferredWidth,
-                minWidth: column.minWidth,
-                maxWidth: column.maxWidth,
-                headerAlignment: column == .sandboxed ? .center : nil
-            )
-        }
+        configureColumns(configuration.allowsColumns)
     }
 
     override func makeCellView(for tableColumn: NSTableColumn, item: RunningProcess) -> NSView? {
+        if let sharedView = makeSharedCellView(columnIdentifier: tableColumn.identifier.rawValue, item: item) {
+            return sharedView
+        }
         guard let column = Column(rawValue: tableColumn.identifier.rawValue) else { return nil }
         switch column {
-        case .icon:
-            return tableView.makeView(ofClass: IconTableCellView.self) {
-                $0.image = item.icon
-            }
-        case .name:
-            return tableView.makeView(ofClass: NameTableCellView.self) {
-                $0.string = item.name
-            }
-        case .pid:
-            return tableView.makeView(ofClass: PIDTableCellView.self) {
-                $0.string = "\(item.processIdentifier)"
-            }
-        case .architecture:
-            return tableView.makeView(ofClass: ArchitectureTableCellView.self) {
-                $0.string = item.architecture?.description
-            }
         case .sandboxed:
             return makeSandboxedCellView(isSandboxed: item.isSandboxed)
         case .executablePath:
             return tableView.makeView(ofClass: ExecutablePathTableCellView.self) {
                 $0.string = item.executablePath
             }
+        default:
+            return nil
         }
     }
 
     override func compareItems(_ lhs: RunningProcess, _ rhs: RunningProcess, columnIdentifier: String) -> ComparisonResult {
+        if let sharedResult = compareSharedItems(lhs, rhs, columnIdentifier: columnIdentifier) {
+            return sharedResult
+        }
         guard let column = Column(rawValue: columnIdentifier) else { return .orderedSame }
         switch column {
-        case .icon:
-            return .orderedSame
-        case .name:
-            return lhs.name.localizedCaseInsensitiveCompare(rhs.name)
-        case .pid:
-            return compareNumericValues(lhs.processIdentifier, rhs.processIdentifier)
-        case .architecture:
-            return (lhs.architecture?.description ?? "").compare(rhs.architecture?.description ?? "")
-        case .sandboxed:
-            return compareBooleanValues(lhs.isSandboxed, rhs.isSandboxed)
         case .executablePath:
             return (lhs.executablePath ?? "").localizedCaseInsensitiveCompare(rhs.executablePath ?? "")
+        default:
+            return .orderedSame
         }
     }
 
     override func contextMenuItems(for item: RunningProcess) -> [NSMenuItem] {
-        var items: [NSMenuItem] = []
-        let copyPID = NSMenuItem(title: "Copy PID", action: #selector(copyPIDAction(_:)), keyEquivalent: "")
-        copyPID.target = self
-        copyPID.representedObject = item
-        items.append(copyPID)
+        var items: [NSMenuItem] = [makeCopyPIDMenuItem(for: item)]
 
         if item.executablePath != nil {
             let copyPath = NSMenuItem(title: "Copy Path", action: #selector(copyPathAction(_:)), keyEquivalent: "")
             copyPath.target = self
             copyPath.representedObject = item
             items.append(copyPath)
-        }
 
-        if item.executablePath != nil {
             items.append(.separator())
             let showInFinder = NSMenuItem(title: "Show in Finder", action: #selector(showInFinderAction(_:)), keyEquivalent: "")
             showInFinder.target = self
@@ -212,11 +181,6 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
     }
 
     // MARK: - Actions
-
-    @objc private func copyPIDAction(_ sender: NSMenuItem) {
-        guard let item = sender.representedObject as? RunningProcess else { return }
-        copyToPasteboard("\(item.processIdentifier)")
-    }
 
     @objc private func copyPathAction(_ sender: NSMenuItem) {
         guard let item = sender.representedObject as? RunningProcess, let path = item.executablePath else { return }

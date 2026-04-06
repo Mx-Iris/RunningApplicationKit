@@ -10,7 +10,7 @@ public struct RunningProcess: RunningItem {
     public let architecture: Architecture?
     public let isSandboxed: Bool
 
-    public init(
+    init(
         processIdentifier: pid_t,
         name: String,
         executablePath: String? = nil,
@@ -35,16 +35,86 @@ public struct RunningProcess: RunningItem {
     }
 }
 
+// MARK: - ObjC Bridge Class
+
+@objc(RAKRunningProcess)
+public final class RAKRunningProcess: NSObject {
+    @objc public let processIdentifier: pid_t
+    @objc public let name: String
+    @objc public let executablePath: String?
+    @objc public let icon: NSImage?
+    public let architecture: Architecture?
+    @objc public let isSandboxed: Bool
+
+    init(_ source: RunningProcess) {
+        self.processIdentifier = source.processIdentifier
+        self.name = source.name
+        self.executablePath = source.executablePath
+        self.icon = source.icon
+        self.architecture = source.architecture
+        self.isSandboxed = source.isSandboxed
+        super.init()
+    }
+}
+
+// MARK: - _ObjectiveCBridgeable
+
+extension RunningProcess: _ObjectiveCBridgeable {
+    public typealias _ObjectiveCType = RAKRunningProcess
+
+    public func _bridgeToObjectiveC() -> RAKRunningProcess {
+        RAKRunningProcess(self)
+    }
+
+    public static func _forceBridgeFromObjectiveC(_ source: RAKRunningProcess, result: inout RunningProcess?) {
+        result = _makeRunningProcess(from: source)
+    }
+
+    public static func _conditionallyBridgeFromObjectiveC(_ source: RAKRunningProcess, result: inout RunningProcess?) -> Bool {
+        result = _makeRunningProcess(from: source)
+        return true
+    }
+
+    public static func _unconditionallyBridgeFromObjectiveC(_ source: RAKRunningProcess?) -> RunningProcess {
+        guard let source else { fatalError("Cannot bridge nil RAKRunningProcess") }
+        return _makeRunningProcess(from: source)
+    }
+
+    private static func _makeRunningProcess(from source: RAKRunningProcess) -> RunningProcess {
+        RunningProcess(
+            processIdentifier: source.processIdentifier,
+            name: source.name,
+            executablePath: source.executablePath,
+            icon: source.icon,
+            architecture: source.architecture,
+            isSandboxed: source.isSandboxed
+        )
+    }
+}
+
+// MARK: - Thread-Safe Cache
+
+private final class ThreadSafeCache<Key: Hashable, Value>: @unchecked Sendable {
+    private var storage: [Key: Value] = [:]
+    private let lock = NSLock()
+
+    subscript(key: Key) -> Value? {
+        get { lock.withLock { storage[key] } }
+        set { lock.withLock { storage[key] = newValue } }
+    }
+}
+
+// MARK: - Process Enumerator
+
 public enum RunningProcessEnumerator {
-    private static let cacheLock = NSLock()
     // Icon cache keyed by UTType identifier — process icons are just a handful of
     // distinct types (unix executable, generic document, etc.)
-    nonisolated(unsafe) private static var iconCache: [String: NSImage] = [:]
+    private static let iconCache = ThreadSafeCache<String, NSImage>()
     // Architecture cache keyed by executable path — lookup returns Architecture??
     // where outer nil = cache miss, inner nil = architecture undetectable
-    nonisolated(unsafe) private static var architectureCache: [String: Architecture?] = [:]
+    private static let architectureCache = ThreadSafeCache<String, Architecture?>()
     // Sandbox status cache keyed by executable path
-    nonisolated(unsafe) private static var sandboxCache: [String: Bool] = [:]
+    private static let sandboxCache = ThreadSafeCache<String, Bool>()
 
     /// Build a single `RunningProcess` for the given PID. Returns nil if the process name cannot be determined.
     public static func makeProcess(for pid: pid_t) -> RunningProcess? {
@@ -68,13 +138,12 @@ public enum RunningProcessEnumerator {
 
         let architecture: Architecture?
         if let executablePath {
-            // Check cache under lock, load outside lock to avoid holding it during I/O
-            let cached: Architecture?? = cacheLock.withLock { architectureCache[executablePath] }
+            let cached: Architecture?? = architectureCache[executablePath]
             if let cached {
                 architecture = cached
             } else {
                 let detected = BSDProcess.architecture(for: pid)
-                cacheLock.withLock { architectureCache[executablePath] = detected }
+                architectureCache[executablePath] = detected
                 architecture = detected
             }
         } else {
@@ -83,12 +152,11 @@ public enum RunningProcessEnumerator {
 
         let isSandboxed: Bool
         if let executablePath {
-            let cached = cacheLock.withLock { sandboxCache[executablePath] }
-            if let cached {
+            if let cached = sandboxCache[executablePath] {
                 isSandboxed = cached
             } else {
                 let detected = BSDProcess.isSandboxed(pid: pid)
-                cacheLock.withLock { sandboxCache[executablePath] = detected }
+                sandboxCache[executablePath] = detected
                 isSandboxed = detected
             }
         } else {
@@ -117,11 +185,11 @@ public enum RunningProcessEnumerator {
         }
 
         let cacheKey = uttype.identifier
-        if let cached = cacheLock.withLock({ iconCache[cacheKey] }) {
+        if let cached = iconCache[cacheKey] {
             return cached
         }
         let icon = NSWorkspace.shared.icon(for: uttype)
-        cacheLock.withLock { iconCache[cacheKey] = icon }
+        iconCache[cacheKey] = icon
         return icon
     }
 

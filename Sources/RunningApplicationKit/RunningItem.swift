@@ -5,4 +5,5 @@ public protocol RunningItem: Hashable, Sendable {
     var name: String { get }
     var icon: NSImage? { get }
     var architecture: Architecture? { get }
+    var isSandboxed: Bool { get }
 }

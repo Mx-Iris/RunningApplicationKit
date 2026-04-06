@@ -24,7 +24,7 @@ class IconTableCellView: TableCellView {
         }
     }
 
-    private let iconImageView = NSImageView()
+    fileprivate let iconImageView = NSImageView()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -39,7 +39,41 @@ class IconTableCellView: TableCellView {
     }
 }
 
-class StatusIconTableCellView: IconTableCellView {}
+class StatusIconTableCellView: IconTableCellView {
+    var isLoading: Bool = false {
+        didSet {
+            iconImageView.isHidden = isLoading
+            if isLoading {
+                spinner.startAnimation(nil)
+            } else {
+                spinner.stopAnimation(nil)
+            }
+            spinner.isHidden = !isLoading
+        }
+    }
+
+    private let spinner = NSProgressIndicator()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        addSubview(spinner)
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isHidden = true
+        NSLayoutConstraint.activate([
+            spinner.centerYAnchor.constraint(equalTo: centerYAnchor),
+            spinner.centerXAnchor.constraint(equalTo: centerXAnchor),
+        ])
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        isLoading = false
+        image = nil
+        tintColor = nil
+    }
+}
 
 class NameTableCellView: LabelTableCellView {}
 
@@ -56,13 +90,6 @@ class LabelTableCellView: TableCellView {
         didSet {
             label.stringValue = string ?? ""
             toolTip = label.stringValue
-        }
-    }
-
-    var attributedString: NSAttributedString? {
-        didSet {
-            label.attributedStringValue = attributedString ?? NSAttributedString()
-            toolTip = label.attributedStringValue.string
         }
     }
 

@@ -1,5 +1,13 @@
 import AppKit
 
+protocol PickerColumn: RawRepresentable where RawValue == String {
+    var title: String { get }
+    var preferredWidth: CGFloat { get }
+    var minWidth: CGFloat? { get }
+    var maxWidth: CGFloat? { get }
+    var headerAlignment: NSTextAlignment? { get }
+}
+
 struct BaseConfiguration {
     var title: String
     var description: String
@@ -217,10 +225,6 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
         }
     }
 
-    func itemForRow(_ row: Int) -> Item? {
-        dataSource.itemIdentifier(forRow: row)
-    }
-
     // MARK: - Configuration
 
     func applyBaseConfiguration(_ config: BaseConfiguration) {
@@ -230,6 +234,19 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
         confirmButton.title = config.confirmButtonTitle
         tableView.rowHeight = config.rowHeight
         tableView.intercellSpacing = config.cellSpacing
+    }
+
+    func configureColumns<Column: PickerColumn>(_ columns: [Column]) {
+        for column in columns {
+            addTableColumn(
+                identifier: column.rawValue,
+                title: column.title,
+                preferredWidth: column.preferredWidth,
+                minWidth: column.minWidth,
+                maxWidth: column.maxWidth,
+                headerAlignment: column.headerAlignment
+            )
+        }
     }
 
     func addTableColumn(identifier: String, title: String, preferredWidth: CGFloat, minWidth: CGFloat? = nil, maxWidth: CGFloat? = nil, headerAlignment: NSTextAlignment? = nil) {
@@ -245,12 +262,63 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
         tableView.addTableColumn(column)
     }
 
-    // MARK: - Shared Cell & Comparison Helpers
+    // MARK: - Shared Cell Helpers
 
-    func makeSandboxedCellView(isSandboxed: Bool) -> NSView {
+    /// Create a cell view for common column types shared across all picker VCs.
+    /// Returns nil if the column identifier is not a shared type.
+    func makeSharedCellView(columnIdentifier: String, item: Item) -> NSView? {
+        switch columnIdentifier {
+        case "icon":
+            return tableView.makeView(ofClass: IconTableCellView.self) {
+                $0.image = item.icon
+            }
+        case "name":
+            return tableView.makeView(ofClass: NameTableCellView.self) {
+                $0.string = item.name
+            }
+        case "pid":
+            return tableView.makeView(ofClass: PIDTableCellView.self) {
+                $0.string = "\(item.processIdentifier)"
+            }
+        case "architecture":
+            return tableView.makeView(ofClass: ArchitectureTableCellView.self) {
+                $0.string = item.architecture?.description
+            }
+        default:
+            return nil
+        }
+    }
+
+    func makeSandboxedCellView(isSandboxed: Bool, isLoading: Bool = false) -> NSView {
         tableView.makeView(ofClass: StatusIconTableCellView.self) {
-            $0.image = isSandboxed ? .checkmarkImage : .xmarkImage
-            $0.tintColor = isSandboxed ? .systemGreen : .systemRed
+            if isLoading {
+                $0.isLoading = true
+            } else {
+                $0.isLoading = false
+                $0.image = isSandboxed ? .checkmarkImage : .xmarkImage
+                $0.tintColor = isSandboxed ? .systemGreen : .systemRed
+            }
+        }
+    }
+
+    // MARK: - Shared Comparison Helpers
+
+    /// Compare two items by a common column identifier shared across all picker VCs.
+    /// Returns nil if the column identifier is not a shared type.
+    func compareSharedItems(_ lhs: Item, _ rhs: Item, columnIdentifier: String) -> ComparisonResult? {
+        switch columnIdentifier {
+        case "icon":
+            return .orderedSame
+        case "name":
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+        case "pid":
+            return compareNumericValues(lhs.processIdentifier, rhs.processIdentifier)
+        case "architecture":
+            return (lhs.architecture?.description ?? "").compare(rhs.architecture?.description ?? "")
+        case "sandboxed":
+            return compareBooleanValues(lhs.isSandboxed, rhs.isSandboxed)
+        default:
+            return nil
         }
     }
 
@@ -262,6 +330,20 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
     func compareBooleanValues(_ lhs: Bool, _ rhs: Bool) -> ComparisonResult {
         if lhs == rhs { return .orderedSame }
         return lhs ? .orderedAscending : .orderedDescending
+    }
+
+    // MARK: - Shared Context Menu Helpers
+
+    func makeCopyPIDMenuItem(for item: Item) -> NSMenuItem {
+        let menuItem = NSMenuItem(title: "Copy PID", action: #selector(copyPIDAction(_:)), keyEquivalent: "")
+        menuItem.target = self
+        menuItem.representedObject = item
+        return menuItem
+    }
+
+    @objc private func copyPIDAction(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? Item else { return }
+        copyToPasteboard("\(item.processIdentifier)")
     }
 
     // MARK: - Actions

@@ -71,30 +71,13 @@ public actor RunningProcessObserver {
     }
 
     private nonisolated func findMatchingPIDs() -> Set<pid_t> {
-        let target = self.target
-
         switch target {
         case .pid(let targetPID):
-            // Direct check via kill(pid, 0) avoids enumerating all processes
             return BSDProcess.isRunning(pid: targetPID) ? [targetPID] : []
-
         case .name(let targetName):
-            var matchingPIDs: Set<pid_t> = []
-            for pid in BSDProcess.allPIDs() {
-                if BSDProcess.name(for: pid) == targetName {
-                    matchingPIDs.insert(pid)
-                }
-            }
-            return matchingPIDs
-
+            return Set(BSDProcess.allPIDs().filter { BSDProcess.name(for: $0) == targetName })
         case .executablePath(let targetPath):
-            var matchingPIDs: Set<pid_t> = []
-            for pid in BSDProcess.allPIDs() {
-                if BSDProcess.executablePath(for: pid) == targetPath {
-                    matchingPIDs.insert(pid)
-                }
-            }
-            return matchingPIDs
+            return Set(BSDProcess.allPIDs().filter { BSDProcess.executablePath(for: $0) == targetPath })
         }
     }
 }
