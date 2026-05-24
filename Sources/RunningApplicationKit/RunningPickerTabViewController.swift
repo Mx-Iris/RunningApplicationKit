@@ -1,7 +1,24 @@
 import AppKit
 
-@objc(RAKRunningPickerTabViewController)
-public final class RunningPickerTabViewController: NSTabViewController {
+public final class RunningPickerTabViewController: NSViewController {
+    // MARK: - Configuration
+
+    public struct Configuration {
+        public var contentInsets: NSEdgeInsets
+        public var applicationTabLabel: String
+        public var processTabLabel: String
+
+        public init(
+            contentInsets: NSEdgeInsets = .init(top: 16, left: 16, bottom: 16, right: 16),
+            applicationTabLabel: String = "Applications",
+            processTabLabel: String = "Processes"
+        ) {
+            self.contentInsets = contentInsets
+            self.applicationTabLabel = applicationTabLabel
+            self.processTabLabel = processTabLabel
+        }
+    }
+
     // MARK: - Application Column
 
     public enum ApplicationColumn: String, CaseIterable, PickerColumn {
@@ -191,30 +208,34 @@ public final class RunningPickerTabViewController: NSTabViewController {
 
     // MARK: - Delegate
 
-    @objc(RAKRunningPickerTabViewControllerDelegate)
-    public protocol Delegate: AnyObject {
-        @objc optional func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, shouldSelectApplication application: RunningApplication) -> Bool
-        @objc optional func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didSelectApplication application: RunningApplication)
-        @objc optional func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didConfirmApplication application: RunningApplication)
+    @MainActor public protocol Delegate: AnyObject {
+        func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, shouldSelectApplication application: RunningApplication) -> Bool
+        func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didSelectApplication application: RunningApplication)
+        func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didConfirmApplication application: RunningApplication)
 
-        @objc optional func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, shouldSelectProcess process: RunningProcess) -> Bool
-        @objc optional func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didSelectProcess process: RunningProcess)
-        @objc optional func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didConfirmProcess process: RunningProcess)
+        func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, shouldSelectProcess process: RunningProcess) -> Bool
+        func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didSelectProcess process: RunningProcess)
+        func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didConfirmProcess process: RunningProcess)
 
-        @objc optional func runningPickerTabViewControllerWasCancelled(_ viewController: RunningPickerTabViewController)
+        func runningPickerTabViewControllerWasCancelled(_ viewController: RunningPickerTabViewController)
     }
 
     // MARK: - Properties
 
     public weak var delegate: Delegate?
 
+    public private(set) var configuration: Configuration
+
+    private let tabViewController = NSTabViewController()
     private let applicationPickerViewController: RunningApplicationPickerViewController
     private let processPickerViewController: RunningProcessPickerViewController
 
     public init(
+        configuration: Configuration = .init(),
         applicationConfiguration: ApplicationConfiguration = .init(),
         processConfiguration: ProcessConfiguration = .init()
     ) {
+        self.configuration = configuration
         self.applicationPickerViewController = RunningApplicationPickerViewController(configuration: applicationConfiguration)
         self.processPickerViewController = RunningProcessPickerViewController(configuration: processConfiguration)
         super.init(nibName: nil, bundle: nil)
@@ -225,6 +246,10 @@ public final class RunningPickerTabViewController: NSTabViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    public override func loadView() {
+        view = NSView()
+    }
+    
     public override func viewDidLoad() {
         super.viewDidLoad()
         preferredContentSize = .init(width: 800, height: 600)
@@ -232,14 +257,25 @@ public final class RunningPickerTabViewController: NSTabViewController {
         applicationPickerViewController.delegate = self
         processPickerViewController.delegate = self
 
-        let appTabItem = NSTabViewItem(viewController: applicationPickerViewController)
-        appTabItem.label = "Applications"
+        let applicationTabItem = NSTabViewItem(viewController: applicationPickerViewController)
+        applicationTabItem.label = configuration.applicationTabLabel
 
         let processTabItem = NSTabViewItem(viewController: processPickerViewController)
-        processTabItem.label = "Processes"
+        processTabItem.label = configuration.processTabLabel
 
-        addTabViewItem(appTabItem)
-        addTabViewItem(processTabItem)
+        tabViewController.addTabViewItem(applicationTabItem)
+        tabViewController.addTabViewItem(processTabItem)
+
+        addChild(tabViewController)
+        let tabContainerView = tabViewController.view
+        tabContainerView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(tabContainerView)
+        NSLayoutConstraint.activate([
+            tabContainerView.topAnchor.constraint(equalTo: view.topAnchor, constant: configuration.contentInsets.top),
+            tabContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: configuration.contentInsets.left),
+            view.trailingAnchor.constraint(equalTo: tabContainerView.trailingAnchor, constant: configuration.contentInsets.right),
+            view.bottomAnchor.constraint(equalTo: tabContainerView.bottomAnchor, constant: configuration.contentInsets.bottom),
+        ])
 
         // Start loading process data in the background immediately so it's
         // ready (or mostly ready) by the time the user switches to the Process tab.
@@ -247,23 +283,37 @@ public final class RunningPickerTabViewController: NSTabViewController {
     }
 }
 
+// MARK: - Delegate Default Implementations
+
+public extension RunningPickerTabViewController.Delegate {
+    func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, shouldSelectApplication application: RunningApplication) -> Bool { true }
+    func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didSelectApplication application: RunningApplication) {}
+    func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didConfirmApplication application: RunningApplication) {}
+
+    func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, shouldSelectProcess process: RunningProcess) -> Bool { true }
+    func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didSelectProcess process: RunningProcess) {}
+    func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didConfirmProcess process: RunningProcess) {}
+
+    func runningPickerTabViewControllerWasCancelled(_ viewController: RunningPickerTabViewController) {}
+}
+
 // MARK: - RunningApplicationPickerViewController.Delegate
 
 extension RunningPickerTabViewController: RunningApplicationPickerViewController.Delegate {
     func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, shouldSelectApplication application: RunningApplication) -> Bool {
-        delegate?.runningPickerTabViewController?(self, shouldSelectApplication: application) ?? true
+        delegate?.runningPickerTabViewController(self, shouldSelectApplication: application) ?? true
     }
 
     func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, didSelectApplication application: RunningApplication) {
-        delegate?.runningPickerTabViewController?(self, didSelectApplication: application)
+        delegate?.runningPickerTabViewController(self, didSelectApplication: application)
     }
 
     func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, didConfirmApplication application: RunningApplication) {
-        delegate?.runningPickerTabViewController?(self, didConfirmApplication: application)
+        delegate?.runningPickerTabViewController(self, didConfirmApplication: application)
     }
 
     func runningApplicationPickerViewControllerWasCancelled(_ viewController: RunningApplicationPickerViewController) {
-        delegate?.runningPickerTabViewControllerWasCancelled?(self)
+        delegate?.runningPickerTabViewControllerWasCancelled(self)
     }
 }
 
@@ -271,18 +321,18 @@ extension RunningPickerTabViewController: RunningApplicationPickerViewController
 
 extension RunningPickerTabViewController: RunningProcessPickerViewController.Delegate {
     func runningProcessPickerViewController(_ viewController: RunningProcessPickerViewController, shouldSelectProcess process: RunningProcess) -> Bool {
-        delegate?.runningPickerTabViewController?(self, shouldSelectProcess: process) ?? true
+        delegate?.runningPickerTabViewController(self, shouldSelectProcess: process) ?? true
     }
 
     func runningProcessPickerViewController(_ viewController: RunningProcessPickerViewController, didSelectProcess process: RunningProcess) {
-        delegate?.runningPickerTabViewController?(self, didSelectProcess: process)
+        delegate?.runningPickerTabViewController(self, didSelectProcess: process)
     }
 
     func runningProcessPickerViewController(_ viewController: RunningProcessPickerViewController, didConfirmProcess process: RunningProcess) {
-        delegate?.runningPickerTabViewController?(self, didConfirmProcess: process)
+        delegate?.runningPickerTabViewController(self, didConfirmProcess: process)
     }
 
     func runningProcessPickerViewControllerWasCancelled(_ viewController: RunningProcessPickerViewController) {
-        delegate?.runningPickerTabViewControllerWasCancelled?(self)
+        delegate?.runningPickerTabViewControllerWasCancelled(self)
     }
 }

@@ -35,63 +35,6 @@ public struct RunningProcess: RunningItem {
     }
 }
 
-// MARK: - ObjC Bridge Class
-
-@objc(RAKRunningProcess)
-public final class RAKRunningProcess: NSObject {
-    @objc public let processIdentifier: pid_t
-    @objc public let name: String
-    @objc public let executablePath: String?
-    @objc public let icon: NSImage?
-    public let architecture: Architecture?
-    @objc public let isSandboxed: Bool
-
-    init(_ source: RunningProcess) {
-        self.processIdentifier = source.processIdentifier
-        self.name = source.name
-        self.executablePath = source.executablePath
-        self.icon = source.icon
-        self.architecture = source.architecture
-        self.isSandboxed = source.isSandboxed
-        super.init()
-    }
-}
-
-// MARK: - _ObjectiveCBridgeable
-
-extension RunningProcess: _ObjectiveCBridgeable {
-    public typealias _ObjectiveCType = RAKRunningProcess
-
-    public func _bridgeToObjectiveC() -> RAKRunningProcess {
-        RAKRunningProcess(self)
-    }
-
-    public static func _forceBridgeFromObjectiveC(_ source: RAKRunningProcess, result: inout RunningProcess?) {
-        result = _makeRunningProcess(from: source)
-    }
-
-    public static func _conditionallyBridgeFromObjectiveC(_ source: RAKRunningProcess, result: inout RunningProcess?) -> Bool {
-        result = _makeRunningProcess(from: source)
-        return true
-    }
-
-    public static func _unconditionallyBridgeFromObjectiveC(_ source: RAKRunningProcess?) -> RunningProcess {
-        guard let source else { fatalError("Cannot bridge nil RAKRunningProcess") }
-        return _makeRunningProcess(from: source)
-    }
-
-    private static func _makeRunningProcess(from source: RAKRunningProcess) -> RunningProcess {
-        RunningProcess(
-            processIdentifier: source.processIdentifier,
-            name: source.name,
-            executablePath: source.executablePath,
-            icon: source.icon,
-            architecture: source.architecture,
-            isSandboxed: source.isSandboxed
-        )
-    }
-}
-
 // MARK: - Thread-Safe Cache
 
 private final class ThreadSafeCache<Key: Hashable, Value>: @unchecked Sendable {
