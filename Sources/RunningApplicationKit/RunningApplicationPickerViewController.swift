@@ -18,6 +18,7 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
     private var runningApplicationObservation: NSKeyValueObservation?
     private var applicationCache: [pid_t: RunningApplication] = [:]
     private var cachedItemPIDs: [pid_t] = []
+    private let backgroundQueue = DispatchQueue(label: "com.runningapplicationkit.application-picker", qos: .userInitiated)
 
     private(set) var configuration: Configuration
 
@@ -38,16 +39,20 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
         setupObservation()
     }
 
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        if applicationCache.isEmpty {
+            refreshInBackground(animatingDifferences: false)
+        }
+    }
+
     // MARK: - Overrides
 
     override func loadItems() -> [RunningApplication] {
-        let apps = workspace.runningApplications
-            .filter { $0.processIdentifier > 0 }
-            .map { RunningApplication(from: $0, resolveSandbox: false) }
-        applicationCache = Dictionary(uniqueKeysWithValues: apps.map { ($0.processIdentifier, $0) })
-        cachedItemPIDs = apps.map(\.processIdentifier)
-        resolveSandboxStatusAsync(for: apps)
-        return apps
+        // Return whatever has been prefetched so far. If prefetch() was called early
+        // (by the parent tab view controller) this may already contain the full app list,
+        // avoiding an empty-table flash. Otherwise refreshInBackground() populates the table asynchronously.
+        cachedItemPIDs.compactMap { applicationCache[$0] }
     }
 
     override func configureColumns() {
@@ -120,6 +125,57 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
         delegate?.runningApplicationPickerViewController(self, shouldSelectApplication: item) ?? true
     }
 
+    // MARK: - Prefetch & Background Refresh
+
+    /// Start application enumeration early, before the view is loaded.
+    /// Called by the parent tab view controller so data is ready when viewDidLoad runs.
+    func prefetch() {
+        refreshInBackground(animatingDifferences: false)
+    }
+
+    private func refreshInBackground(animatingDifferences: Bool) {
+        // NSRunningApplication.icon / bundleURL / executableURL / architecture all hit LaunchServices via XPC
+        // and can cost tens of milliseconds per call (icon alone is ~36ms across a typical app list).
+        // Snapshot the running-app array on the main thread, then build RunningApplication values off-thread.
+        let snapshot = workspace.runningApplications.filter { $0.processIdentifier > 0 }
+        let knownPIDs = Set(applicationCache.keys)
+
+        // NSRunningApplication is documented as thread-safe for property access, but is not Sendable under
+        // Swift 6 strict concurrency. The unchecked box crosses the isolation boundary deliberately.
+        let box = UncheckedSendableBox(value: snapshot)
+
+        backgroundQueue.async { [weak self] in
+            let runningApps = box.value
+            let orderedPIDs = runningApps.map(\.processIdentifier)
+            let currentPIDs = Set(orderedPIDs)
+            let addedPIDs = currentPIDs.subtracting(knownPIDs)
+            let removedPIDs = knownPIDs.subtracting(currentPIDs)
+
+            let newApplications: [RunningApplication] = runningApps
+                .filter { addedPIDs.contains($0.processIdentifier) }
+                .map { RunningApplication(from: $0, resolveSandbox: false) }
+
+            DispatchQueue.main.async {
+                guard let self else { return }
+
+                for pid in removedPIDs {
+                    self.applicationCache.removeValue(forKey: pid)
+                }
+                for application in newApplications {
+                    self.applicationCache[application.processIdentifier] = application
+                }
+                self.cachedItemPIDs = orderedPIDs
+
+                let orderedItems = orderedPIDs.compactMap { self.applicationCache[$0] }
+                self.updateItems(orderedItems, animatingDifferences: animatingDifferences)
+
+                if !newApplications.isEmpty {
+                    self.resolveSandboxStatusAsync(for: newApplications)
+                }
+            }
+        }
+    }
+
     // MARK: - Sandbox Resolution
 
     private func resolveSandboxStatusAsync(for applications: [RunningApplication]) {
@@ -150,38 +206,8 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
         runningApplicationObservation = workspace.observe(\.runningApplications) { [weak self] _, _ in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.handleRunningApplicationsChange()
+                self.refreshInBackground(animatingDifferences: true)
             }
-        }
-    }
-
-    private func handleRunningApplicationsChange() {
-        let currentApps = workspace.runningApplications.filter { $0.processIdentifier > 0 }
-        let currentPIDs = Set(currentApps.map(\.processIdentifier))
-        let cachedPIDs = Set(applicationCache.keys)
-
-        let addedPIDs = currentPIDs.subtracting(cachedPIDs)
-        let removedPIDs = cachedPIDs.subtracting(currentPIDs)
-
-        guard !addedPIDs.isEmpty || !removedPIDs.isEmpty else { return }
-
-        for pid in removedPIDs {
-            applicationCache.removeValue(forKey: pid)
-        }
-
-        var newlyAddedApplications: [RunningApplication] = []
-        for app in currentApps where addedPIDs.contains(app.processIdentifier) {
-            let runningApplication = RunningApplication(from: app, resolveSandbox: false)
-            applicationCache[app.processIdentifier] = runningApplication
-            newlyAddedApplications.append(runningApplication)
-        }
-
-        cachedItemPIDs = currentApps.map(\.processIdentifier)
-        let orderedItems = currentApps.compactMap { applicationCache[$0.processIdentifier] }
-        updateItems(orderedItems, animatingDifferences: true)
-
-        if !newlyAddedApplications.isEmpty {
-            resolveSandboxStatusAsync(for: newlyAddedApplications)
         }
     }
 
@@ -201,6 +227,10 @@ extension RunningApplicationPickerViewController.Delegate {
     func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, didSelectApplication application: RunningApplication) {}
     func runningApplicationPickerViewController(_ viewController: RunningApplicationPickerViewController, didConfirmApplication application: RunningApplication) {}
     func runningApplicationPickerViewControllerWasCancelled(_ viewController: RunningApplicationPickerViewController) {}
+}
+
+private struct UncheckedSendableBox<Value>: @unchecked Sendable {
+    let value: Value
 }
 
 import SwiftUI

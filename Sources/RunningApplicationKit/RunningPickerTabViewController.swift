@@ -277,8 +277,10 @@ public final class RunningPickerTabViewController: NSViewController {
             view.bottomAnchor.constraint(equalTo: tabContainerView.bottomAnchor, constant: configuration.contentInsets.bottom),
         ])
 
-        // Start loading process data in the background immediately so it's
-        // ready (or mostly ready) by the time the user switches to the Process tab.
+        // Start loading application + process data in the background immediately so each tab is
+        // populated (or mostly populated) by the time NSTabViewController forces its child viewDidLoads
+        // via _goodTabViewContentSize, and by the time the user switches tabs.
+        applicationPickerViewController.prefetch()
         processPickerViewController.prefetch()
     }
 }
