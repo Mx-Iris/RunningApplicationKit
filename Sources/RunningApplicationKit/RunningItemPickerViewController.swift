@@ -59,6 +59,10 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
     private var sortColumnIdentifier: String?
     private var sortAscending: Bool = true
 
+    private let skeletonView = SkeletonListView()
+    private var hasShownInitialData = false
+    private var skeletonOverlayIsVisible = false
+
     // MARK: - Subclass Hooks
 
     /// Return the items to display. Called on each reload.
@@ -109,26 +113,35 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
         view.addSubview(scrollView)
         view.addSubview(topStackView)
         view.addSubview(bottomStackView)
+        view.addSubview(skeletonView)
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.hasVerticalScroller = true
         scrollView.scrollerStyle = .overlay
         topStackView.translatesAutoresizingMaskIntoConstraints = false
         bottomStackView.translatesAutoresizingMaskIntoConstraints = false
+        skeletonView.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            topStackView.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
-            topStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            topStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            topStackView.topAnchor.constraint(equalTo: view.topAnchor, constant: 0),
+            topStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 0),
+            topStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 0),
 
             scrollView.topAnchor.constraint(equalTo: topStackView.bottomAnchor, constant: 20),
             scrollView.bottomAnchor.constraint(equalTo: bottomStackView.topAnchor, constant: -20),
-            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 0),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 0),
 
-            bottomStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            bottomStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            bottomStackView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
+            bottomStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 0),
+            bottomStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 0),
+            bottomStackView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 0),
+
+            // Anchor the skeleton to the scroll view's clip view so the column
+            // header stays visible above it and the skeleton doesn't scroll.
+            skeletonView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+            skeletonView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+            skeletonView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
+            skeletonView.bottomAnchor.constraint(equalTo: scrollView.contentView.bottomAnchor),
 
             searchField.widthAnchor.constraint(equalToConstant: 300),
         ])
@@ -183,9 +196,32 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
         tableView.dataSource = dataSource
         tableView.delegate = self
 
+        skeletonView.tableView = tableView
+
         configureColumns()
         setupTableViewMenu()
         reloadData()
+
+        if cachedItems.isEmpty {
+            skeletonView.isHidden = false
+            skeletonOverlayIsVisible = true
+        } else {
+            hasShownInitialData = true
+            skeletonView.isHidden = true
+            skeletonOverlayIsVisible = false
+        }
+    }
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        if skeletonOverlayIsVisible {
+            skeletonView.startAnimating()
+        }
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        skeletonView.stopAnimating()
     }
 
     // MARK: - Data
@@ -198,6 +234,77 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
     func updateItems(_ items: [Item], animatingDifferences: Bool = false) {
         cachedItems = items
         applyFilter(animatingDifferences: animatingDifferences)
+        if !hasShownInitialData, !items.isEmpty {
+            hasShownInitialData = true
+            skeletonOverlayIsVisible = false
+            hideSkeletonAnimated()
+        }
+    }
+
+    /// Whether the loading skeleton overlay is currently visible.
+    var isSkeletonOverlayVisible: Bool { skeletonOverlayIsVisible }
+
+    /// Tunable appearance for the loading skeleton overlay.
+    var skeletonAppearance: SkeletonAppearance {
+        get { skeletonView.skeletonAppearance }
+        set { skeletonView.skeletonAppearance = newValue }
+    }
+
+    /// Manually show or hide the skeleton overlay. Once called, the natural
+    /// "hide on first data" path is suppressed so the caller owns visibility.
+    /// - Parameters:
+    ///   - visible: target visibility.
+    ///   - alpha: target alpha when `visible == true`, clamped to [0, 1].
+    ///     Use a value below 1 to let the underlying content show through.
+    ///   - animated: when hiding, fade out; when showing, fade alpha in.
+    func setSkeletonOverlayVisible(_ visible: Bool, alpha: CGFloat = 1, animated: Bool = true) {
+        skeletonOverlayIsVisible = visible
+        hasShownInitialData = true
+
+        // Cancel any in-flight fade so a rapid toggle doesn't leave the
+        // overlay stuck mid-animation.
+        skeletonView.layer?.removeAllAnimations()
+
+        if visible {
+            let clampedAlpha = max(0, min(1, alpha))
+            skeletonView.isHidden = false
+            skeletonView.startAnimating()
+            if animated {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.18
+                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    skeletonView.animator().alphaValue = clampedAlpha
+                }
+            } else {
+                skeletonView.alphaValue = clampedAlpha
+            }
+        } else if animated {
+            hideSkeletonAnimated()
+        } else {
+            skeletonView.stopAnimating()
+            skeletonView.isHidden = true
+            skeletonView.alphaValue = 1
+        }
+    }
+
+    private func hideSkeletonAnimated() {
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.25
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            skeletonView.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            // NSAnimationContext completion fires on the main thread, but the
+            // closure type is @Sendable under Swift 6, so reassert isolation.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                // If the user toggled the overlay back on during the fade, the
+                // intent is now "visible" — skip cleanup so we don't hide it.
+                guard !self.skeletonOverlayIsVisible else { return }
+                self.skeletonView.stopAnimating()
+                self.skeletonView.isHidden = true
+                self.skeletonView.alphaValue = 1
+            }
+        })
     }
 
     func applyFilter(animatingDifferences: Bool = true) {
@@ -234,6 +341,8 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
         confirmButton.title = config.confirmButtonTitle
         tableView.rowHeight = config.rowHeight
         tableView.intercellSpacing = config.cellSpacing
+        skeletonView.rowHeight = config.rowHeight
+        skeletonView.rowSpacing = config.cellSpacing.height
     }
 
     func configureColumns<Column: PickerColumn>(_ columns: [Column]) {
@@ -245,6 +354,14 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
                 minWidth: column.minWidth,
                 maxWidth: column.maxWidth,
                 headerAlignment: column.headerAlignment
+            )
+        }
+        let iconStyleIdentifiers: Set<String> = ["icon", "sandboxed"]
+        skeletonView.columns = columns.map { column in
+            SkeletonColumnDescriptor(
+                identifier: column.rawValue,
+                style: iconStyleIdentifiers.contains(column.rawValue) ? .icon : .text,
+                alignment: column.headerAlignment ?? .left
             )
         }
     }

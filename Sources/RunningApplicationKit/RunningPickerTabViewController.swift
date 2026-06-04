@@ -9,7 +9,7 @@ public final class RunningPickerTabViewController: NSViewController {
         public var processTabLabel: String
 
         public init(
-            contentInsets: NSEdgeInsets = .init(top: 16, left: 16, bottom: 16, right: 16),
+            contentInsets: NSEdgeInsets = .init(top: 20, left: 20, bottom: 20, right: 20),
             applicationTabLabel: String = "Applications",
             processTabLabel: String = "Processes"
         ) {
@@ -282,6 +282,34 @@ public final class RunningPickerTabViewController: NSViewController {
         // via _goodTabViewContentSize, and by the time the user switches tabs.
         applicationPickerViewController.prefetch()
         processPickerViewController.prefetch()
+    }
+
+    // MARK: - Skeleton Overlay
+
+    /// Whether the loading skeleton overlay is currently visible on the picker tabs.
+    public var isSkeletonOverlayVisible: Bool {
+        applicationPickerViewController.isSkeletonOverlayVisible
+    }
+
+    /// Show or hide the loading skeleton overlay on both tabs. Useful as a
+    /// debug toggle to flip between skeleton and content states.
+    /// - Parameters:
+    ///   - visible: whether the overlay should be visible.
+    ///   - alpha: target alpha when `visible == true`, clamped to [0, 1].
+    ///     Pass a value below 1 to show skeleton and real content at once.
+    public func setSkeletonOverlayVisible(_ visible: Bool, alpha: CGFloat = 1) {
+        applicationPickerViewController.setSkeletonOverlayVisible(visible, alpha: alpha)
+        processPickerViewController.setSkeletonOverlayVisible(visible, alpha: alpha)
+    }
+
+    /// Tunable appearance for the loading skeleton overlay. Setting this
+    /// applies the same appearance to both the Applications and Processes tabs.
+    public var skeletonAppearance: SkeletonAppearance {
+        get { applicationPickerViewController.skeletonAppearance }
+        set {
+            applicationPickerViewController.skeletonAppearance = newValue
+            processPickerViewController.skeletonAppearance = newValue
+        }
     }
 }
 
