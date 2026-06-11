@@ -134,7 +134,7 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
     }
 
     private func refreshInBackground(animatingDifferences: Bool) {
-        // NSRunningApplication.icon / bundleURL / executableURL / architecture all hit LaunchServices via XPC
+        // NSRunningApplication.icon / bundleURL / executableURL all hit LaunchServices via XPC
         // and can cost tens of milliseconds per call (icon alone is ~36ms across a typical app list).
         // Snapshot the running-app array on the main thread, then build RunningApplication values off-thread.
         let snapshot = workspace.runningApplications.filter { $0.processIdentifier > 0 }

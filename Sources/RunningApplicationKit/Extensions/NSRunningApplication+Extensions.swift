@@ -1,21 +1,11 @@
 import AppKit
 
 extension NSRunningApplication {
-    var architecture: Architecture {
-        switch executableArchitecture {
-        case NSBundleExecutableArchitectureARM64:
-            return .arm64
-        case NSBundleExecutableArchitectureX86_64:
-            return .x86_64
-        case NSBundleExecutableArchitectureI386:
-            return .i386
-        case NSBundleExecutableArchitecturePPC:
-            return .ppc
-        case NSBundleExecutableArchitecturePPC64:
-            return .ppc64
-        default:
-            return .unknown
-        }
+    // executableArchitecture only surfaces cputype, so arm64 and arm64e collapse
+    // to a single value. Route through BSDProcess.architecture(for:) which uses
+    // proc_pidinfo(PROC_PIDARCHINFO) and preserves cpusubtype.
+    var architecture: Architecture? {
+        BSDProcess.architecture(for: processIdentifier)
     }
 
     private static let sandboxEntitlementKey = "com.apple.security.app-sandbox"

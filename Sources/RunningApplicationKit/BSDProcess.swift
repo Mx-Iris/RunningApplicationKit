@@ -42,75 +42,28 @@ enum BSDProcess {
 
     // MARK: - Architecture Detection
 
+    // PROC_PIDARCHINFO is declared in <sys/proc_info.h> but not exposed to Swift.
+    // It returns the kernel-tracked running architecture (cputype + cpusubtype) for
+    // the process — automatically resolving the active slice of a Universal binary
+    // and distinguishing arm64 from arm64e via cpusubtype.
+    private static let PROC_PIDARCHINFO: Int32 = 19
+
     static func architecture(for pid: pid_t) -> Architecture? {
-        guard let path = executablePath(for: pid) else { return nil }
-        return executableArchitecture(atPath: path, pid: pid)
+        var info = (cputype: cpu_type_t(0), cpusubtype: cpu_subtype_t(0))
+        let size = Int32(MemoryLayout.size(ofValue: info))
+        let bytesRead = withUnsafeMutablePointer(to: &info) { pointer in
+            proc_pidinfo(pid, PROC_PIDARCHINFO, 0, UnsafeMutableRawPointer(pointer), size)
+        }
+        guard bytesRead == size else { return nil }
+        return architectureFrom(cputype: info.cputype, cpusubtype: info.cpusubtype)
     }
 
-    private static func executableArchitecture(atPath path: String, pid: pid_t) -> Architecture? {
-        let fd = Darwin.open(path, O_RDONLY)
-        guard fd >= 0 else {
-            // Can't read executable (SIP, permissions, etc.), fall back to translation check
-            return architectureFromTranslationStatus(pid: pid)
-        }
-        defer { Darwin.close(fd) }
-
-        var magic: UInt32 = 0
-        guard Darwin.read(fd, &magic, MemoryLayout<UInt32>.size) == MemoryLayout<UInt32>.size else {
-            return architectureFromTranslationStatus(pid: pid)
-        }
-        lseek(fd, 0, SEEK_SET)
-
-        switch magic {
-        case MH_MAGIC_64:
-            var header = mach_header_64()
-            guard Darwin.read(fd, &header, MemoryLayout<mach_header_64>.size) == MemoryLayout<mach_header_64>.size else { return nil }
-            return architectureFrom(header.cputype)
-        case MH_CIGAM_64:
-            var header = mach_header_64()
-            guard Darwin.read(fd, &header, MemoryLayout<mach_header_64>.size) == MemoryLayout<mach_header_64>.size else { return nil }
-            return architectureFrom(cpu_type_t(bigEndian: header.cputype))
-        case MH_MAGIC:
-            var header = mach_header()
-            guard Darwin.read(fd, &header, MemoryLayout<mach_header>.size) == MemoryLayout<mach_header>.size else { return nil }
-            return architectureFrom(header.cputype)
-        case MH_CIGAM:
-            var header = mach_header()
-            guard Darwin.read(fd, &header, MemoryLayout<mach_header>.size) == MemoryLayout<mach_header>.size else { return nil }
-            return architectureFrom(cpu_type_t(bigEndian: header.cputype))
-        case FAT_MAGIC, FAT_CIGAM, FAT_MAGIC_64, FAT_CIGAM_64:
-            // Universal binary: determine which slice is actually running
-            return architectureFromTranslationStatus(pid: pid)
-        default:
-            return nil
-        }
-    }
-
-    private static func architectureFromTranslationStatus(pid: pid_t) -> Architecture {
-        if isTranslated(pid: pid) {
-            return .x86_64
-        }
-        #if arch(arm64)
-        return .arm64
-        #elseif arch(x86_64)
-        return .x86_64
-        #else
-        return .unknown
-        #endif
-    }
-
-    private static func isTranslated(pid: pid_t) -> Bool {
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
-        var info = kinfo_proc()
-        var size = MemoryLayout<kinfo_proc>.size
-        guard sysctl(&mib, UInt32(mib.count), &info, &size, nil, 0) == 0 else { return false }
-        // P_TRANSLATED = 0x00020000 (process is running under Rosetta translation)
-        return (info.kp_proc.p_flag & 0x00020000) != 0
-    }
-
-    private static func architectureFrom(_ cputype: cpu_type_t) -> Architecture {
+    private static func architectureFrom(cputype: cpu_type_t, cpusubtype: cpu_subtype_t) -> Architecture {
+        // Strip CPU_SUBTYPE_MASK (0xff000000 capability bits) before matching.
+        let subtype = cpusubtype & 0x00ff_ffff
         switch cputype {
-        case CPU_TYPE_ARM64: return .arm64
+        case CPU_TYPE_ARM64:
+            return subtype == CPU_SUBTYPE_ARM64E ? .arm64e : .arm64
         case CPU_TYPE_X86_64: return .x86_64
         case CPU_TYPE_I386: return .i386
         case CPU_TYPE_POWERPC: return .ppc
