@@ -74,7 +74,7 @@ public struct SkeletonAppearance {
         shimmerDuration: TimeInterval = 1.4,
         shimmerRowStagger: TimeInterval = 0.08,
         shimmerColumnStagger: TimeInterval = 0.05,
-        contentInsets: NSEdgeInsets = NSEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
+        contentInsets: NSEdgeInsets = NSEdgeInsets(top: 8, left: 0, bottom: 8, right: 0),
     ) {
         self.baseColor = baseColor
         self.highlightColor = highlightColor
@@ -144,7 +144,7 @@ final class SkeletonListView: NSView {
         didSet { rebuildRowsContent() }
     }
 
-    var skeletonAppearance: SkeletonAppearance = SkeletonAppearance() {
+    var skeletonAppearance: SkeletonAppearance = .init() {
         didSet {
             for row in rowViews {
                 row.applyAppearance(skeletonAppearance)
@@ -176,7 +176,9 @@ final class SkeletonListView: NSView {
 
     // Skeleton is a passive overlay — never intercept clicks. Lets the user
     // focus the search field / interact with controls even while loading.
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
 
     override func layout() {
         super.layout()
@@ -347,14 +349,13 @@ final class SkeletonRowView: NSView {
                 let trailingInset = skeletonAppearance.textBarTrailingInset
                 let usableWidth = max(0, columnFrame.width - leadingInset - trailingInset)
                 let barWidth = max(12, usableWidth * fraction)
-                let barX: CGFloat
-                switch column.alignment {
+                let barX: CGFloat = switch column.alignment {
                 case .center:
-                    barX = columnFrame.minX + leadingInset + (usableWidth - barWidth) / 2
+                    columnFrame.minX + leadingInset + (usableWidth - barWidth) / 2
                 case .right:
-                    barX = columnFrame.minX + columnFrame.width - trailingInset - barWidth
+                    columnFrame.minX + columnFrame.width - trailingInset - barWidth
                 default:
-                    barX = columnFrame.minX + leadingInset
+                    columnFrame.minX + leadingInset
                 }
                 let barY = (bounds.height - barHeight) / 2 + skeletonAppearance.textBarVerticalOffset
                 placeholder.frame = .init(x: barX, y: barY, width: barWidth, height: barHeight)
@@ -396,8 +397,8 @@ final class SkeletonPlaceholderView: NSView {
     }
 
     private let gradientLayer = CAGradientLayer()
-    private var baseColor: NSColor = NSColor.tertiaryLabelColor.withAlphaComponent(0.32)
-    private var highlightColor: NSColor = NSColor.labelColor.withAlphaComponent(0.14)
+    private var baseColor: NSColor = .tertiaryLabelColor.withAlphaComponent(0.32)
+    private var highlightColor: NSColor = .labelColor.withAlphaComponent(0.14)
     private var shimmerDuration: TimeInterval = 1.4
 
     override init(frame frameRect: NSRect) {
@@ -491,6 +492,8 @@ final class SkeletonPlaceholderView: NSView {
 /// `updateLayer` so the backgroundColor is set inside the display cycle's
 /// appearance context and isn't fighting any future ivar→layer resync.
 private final class SkeletonBackgroundFillView: NSView {
+    var backgroundColor: NSColor?
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
@@ -506,7 +509,7 @@ private final class SkeletonBackgroundFillView: NSView {
 
     override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+            layer?.backgroundColor = backgroundColor?.cgColor
         }
     }
 
