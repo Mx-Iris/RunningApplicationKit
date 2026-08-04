@@ -65,19 +65,17 @@ extension AppDelegate: RunningPickerTabViewController.Delegate {
 
 // MARK: - ExampleContentViewController
 
-/// Wraps the picker tab view controller with a 3-state segmented control that
-/// drives the skeleton overlay: Skeleton only, Content only, or both at once.
+/// Wraps the picker tab view controller with a segmented control that flips the
+/// table between loading placeholders and real content.
 private final class ExampleContentViewController: NSViewController {
     enum SkeletonMode: Int, CaseIterable {
         case skeleton
         case content
-        case both
 
         var title: String {
             switch self {
             case .skeleton: return "Skeleton"
             case .content: return "Content"
-            case .both: return "Both"
             }
         }
     }
@@ -142,11 +140,9 @@ private final class ExampleContentViewController: NSViewController {
     private func apply(mode: SkeletonMode) {
         switch mode {
         case .skeleton:
-            tabViewController.setSkeletonOverlayVisible(true, alpha: 1.0)
+            tabViewController.setSkeletonVisible(true)
         case .content:
-            tabViewController.setSkeletonOverlayVisible(false)
-        case .both:
-            tabViewController.setSkeletonOverlayVisible(true, alpha: 0.5)
+            tabViewController.setSkeletonVisible(false)
         }
     }
 }

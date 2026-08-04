@@ -284,25 +284,25 @@ public final class RunningPickerTabViewController: NSViewController {
         processPickerViewController.prefetch()
     }
 
-    // MARK: - Skeleton Overlay
+    // MARK: - Skeleton
 
-    /// Whether the loading skeleton overlay is currently visible on the picker tabs.
-    public var isSkeletonOverlayVisible: Bool {
-        applicationPickerViewController.isSkeletonOverlayVisible
+    /// Whether the picker tabs currently show loading placeholders instead of
+    /// real content.
+    public var isSkeletonVisible: Bool {
+        applicationPickerViewController.isSkeletonVisible
     }
 
-    /// Show or hide the loading skeleton overlay on both tabs. Useful as a
-    /// debug toggle to flip between skeleton and content states.
+    /// Show or hide the loading placeholders on both tabs. Useful as a debug
+    /// toggle to flip between skeleton and content states.
     /// - Parameters:
-    ///   - visible: whether the overlay should be visible.
-    ///   - alpha: target alpha when `visible == true`, clamped to [0, 1].
-    ///     Pass a value below 1 to show skeleton and real content at once.
-    public func setSkeletonOverlayVisible(_ visible: Bool, alpha: CGFloat = 1) {
-        applicationPickerViewController.setSkeletonOverlayVisible(visible, alpha: alpha)
-        processPickerViewController.setSkeletonOverlayVisible(visible, alpha: alpha)
+    ///   - visible: whether the placeholders should be visible.
+    ///   - animated: cross-fade the table between placeholders and content.
+    public func setSkeletonVisible(_ visible: Bool, animated: Bool = true) {
+        applicationPickerViewController.setSkeletonVisible(visible, animated: animated)
+        processPickerViewController.setSkeletonVisible(visible, animated: animated)
     }
 
-    /// Tunable appearance for the loading skeleton overlay. Setting this
+    /// Tunable appearance for the loading skeleton. Setting this
     /// applies the same appearance to both the Applications and Processes tabs.
     public var skeletonAppearance: SkeletonAppearance {
         get { applicationPickerViewController.skeletonAppearance }
