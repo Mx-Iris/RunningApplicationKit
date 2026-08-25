@@ -2,7 +2,9 @@
 
 A macOS library for enumerating, observing, and picking running applications and BSD processes.
 
-Provides value-type models with architecture and sandbox detection, async observers for launch/termination events, and a ready-to-use picker UI with search, sorting, and context menus.
+Provides value-type models with architecture, platform, and sandbox detection, async observers for launch/termination events, and a ready-to-use picker UI with search, sorting, and context menus.
+
+Platform detection identifies which platform a process's binary was built for — notably telling simulator processes apart from host ones, which architecture alone cannot do: on Apple Silicon a process inside an iOS Simulator runs as native `arm64`, exactly like its host counterparts.
 
 ## Requirements
 
@@ -118,6 +120,13 @@ for process in processes {
 }
 ```
 
+Find the processes running inside a simulator:
+
+```swift
+let simulated = RunningProcessEnumerator.listProcesses()
+    .filter { $0.platform?.isSimulator == true }
+```
+
 Build a model for a single PID:
 
 ```swift
@@ -136,6 +145,7 @@ app.processIdentifier  // pid_t
 app.name               // String
 app.bundleIdentifier   // String?
 app.architecture       // Architecture? (.arm64, .x86_64, ...)
+app.platform           // Platform? (.macOS, .macCatalyst, ...)
 app.isSandboxed        // Bool
 app.isActive           // Bool
 app.activationPolicy   // NSApplication.ActivationPolicy
@@ -148,10 +158,30 @@ process.processIdentifier  // pid_t
 process.name               // String
 process.executablePath     // String?
 process.architecture       // Architecture?
+process.platform           // Platform? (.iOSSimulator, .macOS, ...)
 process.isSandboxed        // Bool
 ```
 
-Both conform to the `RunningItem` protocol (`processIdentifier`, `name`, `icon`, `architecture`).
+Both conform to the `RunningItem` protocol (`processIdentifier`, `name`, `icon`, `architecture`,
+`isSandboxed`, `platform`).
+
+### Platform
+
+`Platform` mirrors the `PLATFORM_*` constants of a binary's Mach-O `LC_BUILD_VERSION` load
+command, read from the executable on disk and cached per path:
+
+```swift
+process.platform             // .iOSSimulator
+process.platform?.isSimulator // true for iOS/tvOS/watchOS/visionOS simulators
+process.platform?.description // "iOS Simulator"
+```
+
+Constants this version does not recognize are preserved as `.unknown(rawValue)` rather than
+discarded, since Apple extends the table most years.
+
+`platform` is `nil` when the executable cannot be read — typically a protected system process
+whose path `proc_pidpath` will not report. On the development machine that is about 5% of all
+processes, the same set for which `architecture` is also unavailable.
 
 ## License
 

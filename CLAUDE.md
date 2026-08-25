@@ -8,9 +8,16 @@ Pure Swift Package Manager library. No Xcode project, no external dependencies.
 
 ```bash
 swift package update && swift build 2>&1 | xcsift
+swift test 2>&1 | xcsift
 ```
 
-There are no tests in this project.
+Tests cover the pure Mach-O parsing logic only (`Tests/RunningApplicationKitTests/`): byte
+order, fat slice selection, and load command bounds, all driven by hand-built in-memory
+fixtures so they do not depend on what the test machine has installed. Process enumeration
+and the UI have no tests.
+
+**xcsift reports failing swift-testing tests as a success** — judge test outcomes by the raw
+exit code of `swift test`, never by the xcsift summary.
 
 An Example app lives in `Example/` with its own `.xcodeproj` (depends on the library via local path).
 
@@ -38,9 +45,14 @@ Only `RunningPickerTabViewController` (and its configuration/delegate/column typ
 `BSDProcess` (internal) wraps several C/Darwin APIs — understanding these is important when debugging or extending process-related features:
 
 - `proc_listpids` / `proc_pidpath` / `proc_name` — BSD process enumeration
-- Mach-O header reading (`mach_header_64`, `fat_header`) — architecture detection from executable binaries
+- `proc_pidinfo` with `PROC_PIDARCHINFO` — architecture detection, reporting the architecture
+  the kernel actually runs the process as (which is what distinguishes arm64 from arm64e)
 - `sysctl` with `KERN_PROC_PID` — Rosetta translation detection via `p_flag & P_TRANSLATED`
 - `csops` loaded via `dlsym` — code-signing status / sandbox detection
+- Mach-O `LC_BUILD_VERSION` read straight from the executable file (`MachOPlatform.swift`) —
+  platform detection, which is how simulator processes are identified. The kernel exposes no
+  platform flavor: `proc_pidinfo` is public only up to `PROC_PIDARCHINFO` (19), and that
+  returns plain `arm64` for simulator guests, identical to host processes.
 - `LSApplicationProxy` accessed via `NSClassFromString` runtime reflection — entitlement-based sandbox detection for applications
 
 ### UI Inheritance Chain
