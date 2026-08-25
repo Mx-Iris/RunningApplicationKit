@@ -118,6 +118,7 @@ public final class RunningPickerTabViewController: NSViewController {
         case name
         case pid
         case architecture
+        case platform
         case sandboxed
         case executablePath
 
@@ -127,6 +128,7 @@ public final class RunningPickerTabViewController: NSViewController {
             case .name: "Name"
             case .pid: "PID"
             case .architecture: "Arch"
+            case .platform: "Platform"
             case .sandboxed: "Sandbox"
             case .executablePath: "Path"
             }
@@ -138,6 +140,9 @@ public final class RunningPickerTabViewController: NSViewController {
             case .name: 200
             case .pid: 50
             case .architecture: 50
+            // Wide enough for "visionOS Simulator", the longest wording that occurs in
+            // practice.
+            case .platform: 130
             case .sandboxed: 70
             case .executablePath: 300
             }

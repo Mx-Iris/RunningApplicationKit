@@ -68,10 +68,15 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
     /// Return the items to display. Called on each reload.
     func loadItems() -> [Item] { [] }
 
-    /// Filter items based on search text. Default implementation filters by name.
+    /// Filter items based on search text. Default implementation matches the name or
+    /// the platform, so "sim", "simulator" and "catalyst" all pull up the processes they
+    /// describe.
     func filterItems(_ items: [Item], searchText: String) -> [Item] {
         guard !searchText.isEmpty else { return items }
-        return items.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        return items.filter { item in
+            item.name.localizedCaseInsensitiveContains(searchText)
+                || item.platform?.matches(searchText: searchText) == true
+        }
     }
 
     /// Configure the table columns. Subclasses must call `addTableColumn` for each column.
@@ -415,6 +420,12 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
             return tableView.makeView(ofClass: ArchitectureTableCellView.self) {
                 $0.string = item.architecture?.description
             }
+        case "platform":
+            return tableView.makeView(ofClass: PlatformTableCellView.self) {
+                // Left blank when undetermined, matching how the Arch column reads; an
+                // unrecognized constant still renders as "Platform <n>".
+                $0.string = item.platform?.description
+            }
         default:
             return nil
         }
@@ -446,6 +457,8 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
             return compareNumericValues(lhs.processIdentifier, rhs.processIdentifier)
         case "architecture":
             return (lhs.architecture?.description ?? "").compare(rhs.architecture?.description ?? "")
+        case "platform":
+            return comparePlatforms(lhs.platform, rhs.platform)
         case "sandboxed":
             return compareBooleanValues(lhs.isSandboxed, rhs.isSandboxed)
         default:
@@ -456,6 +469,12 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
     func compareNumericValues<T: Comparable>(_ lhs: T, _ rhs: T) -> ComparisonResult {
         if lhs == rhs { return .orderedSame }
         return lhs < rhs ? .orderedAscending : .orderedDescending
+    }
+
+    /// Orders by ``Platform/sortOrder``, which ranks simulator platforms first so one
+    /// click on the header lifts them to the top. Undetermined platforms sort last.
+    func comparePlatforms(_ lhs: Platform?, _ rhs: Platform?) -> ComparisonResult {
+        compareNumericValues(lhs?.sortOrder ?? Int.max, rhs?.sortOrder ?? Int.max)
     }
 
     func compareBooleanValues(_ lhs: Bool, _ rhs: Bool) -> ComparisonResult {

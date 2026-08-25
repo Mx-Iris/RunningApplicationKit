@@ -9,6 +9,7 @@ public struct RunningProcess: RunningItem {
     public let icon: NSImage?
     public let architecture: Architecture?
     public let isSandboxed: Bool
+    public let platform: Platform?
 
     init(
         processIdentifier: pid_t,
@@ -16,7 +17,8 @@ public struct RunningProcess: RunningItem {
         executablePath: String? = nil,
         icon: NSImage? = nil,
         architecture: Architecture? = nil,
-        isSandboxed: Bool = false
+        isSandboxed: Bool = false,
+        platform: Platform? = nil
     ) {
         self.processIdentifier = processIdentifier
         self.name = name
@@ -24,6 +26,7 @@ public struct RunningProcess: RunningItem {
         self.icon = icon
         self.architecture = architecture
         self.isSandboxed = isSandboxed
+        self.platform = platform
     }
 
     public func hash(into hasher: inout Hasher) {
@@ -32,18 +35,6 @@ public struct RunningProcess: RunningItem {
 
     public static func == (lhs: RunningProcess, rhs: RunningProcess) -> Bool {
         lhs.processIdentifier == rhs.processIdentifier
-    }
-}
-
-// MARK: - Thread-Safe Cache
-
-private final class ThreadSafeCache<Key: Hashable, Value>: @unchecked Sendable {
-    private var storage: [Key: Value] = [:]
-    private let lock = NSLock()
-
-    subscript(key: Key) -> Value? {
-        get { lock.withLock { storage[key] } }
-        set { lock.withLock { storage[key] = newValue } }
     }
 }
 
@@ -62,6 +53,17 @@ public enum RunningProcessEnumerator {
     /// Build a single `RunningProcess` for the given PID. Returns nil if the process name cannot be determined.
     public static func makeProcess(for pid: pid_t) -> RunningProcess? {
         let executablePath = BSDProcess.executablePath(for: pid)
+
+        // PROC_PIDARCHINFO answers two questions — what to call the architecture, and
+        // which slice of a universal binary to read the platform out of — so it is
+        // fetched at most once here and shared, and not at all when both caches hit.
+        var resolvedRunningArchitecture: MachOArchitecture??
+        func runningArchitecture() -> MachOArchitecture? {
+            if let resolvedRunningArchitecture { return resolvedRunningArchitecture }
+            let fetched = BSDProcess.machOArchitecture(for: pid)
+            resolvedRunningArchitecture = fetched
+            return fetched
+        }
 
         let name: String
         if let procName = BSDProcess.name(for: pid) {
@@ -85,12 +87,21 @@ public enum RunningProcessEnumerator {
             if let cached {
                 architecture = cached
             } else {
-                let detected = BSDProcess.architecture(for: pid)
+                let detected = runningArchitecture().map(BSDProcess.architecture(of:))
                 architectureCache[executablePath] = detected
                 architecture = detected
             }
         } else {
-            architecture = BSDProcess.architecture(for: pid)
+            architecture = runningArchitecture().map(BSDProcess.architecture(of:))
+        }
+
+        // Platform comes from the executable file itself, so a process with no readable
+        // path has no platform to report.
+        let platform: Platform?
+        if let executablePath {
+            platform = MachOPlatform.cachedPlatform(atPath: executablePath, runningArchitecture: runningArchitecture())
+        } else {
+            platform = nil
         }
 
         let isSandboxed: Bool
@@ -112,7 +123,8 @@ public enum RunningProcessEnumerator {
             executablePath: executablePath,
             icon: icon,
             architecture: architecture,
-            isSandboxed: isSandboxed
+            isSandboxed: isSandboxed,
+            platform: platform
         )
     }
 

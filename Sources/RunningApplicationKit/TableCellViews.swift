@@ -83,6 +83,8 @@ class PIDTableCellView: LabelTableCellView {}
 
 class ArchitectureTableCellView: LabelTableCellView {}
 
+class PlatformTableCellView: LabelTableCellView {}
+
 class ExecutablePathTableCellView: LabelTableCellView {}
 
 class LabelTableCellView: TableCellView {

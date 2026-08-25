@@ -17,6 +17,7 @@ public struct RunningApplication: RunningItem {
     public let activationPolicy: NSApplication.ActivationPolicy
     public internal(set) var isSandboxed: Bool
     public internal(set) var isSandboxResolved: Bool
+    public let platform: Platform?
 
     public init(from app: NSRunningApplication, resolveSandbox: Bool = true) {
         self.processIdentifier = app.processIdentifier
@@ -35,6 +36,15 @@ public struct RunningApplication: RunningItem {
         self.activationPolicy = app.activationPolicy
         self.isSandboxed = resolveSandbox ? app.isSandboxed : false
         self.isSandboxResolved = resolveSandbox
+        // No resolve flag to match `resolveSandbox`: reading the Mach-O header costs
+        // about two orders of magnitude less than the code-signing query behind
+        // `isSandboxed`, and the result is cached per executable path.
+        self.platform = app.executableURL.flatMap { executableURL in
+            MachOPlatform.cachedPlatform(
+                atPath: executableURL.path,
+                runningArchitecture: BSDProcess.machOArchitecture(for: app.processIdentifier)
+            )
+        }
     }
 
     // Hashable: identity by PID

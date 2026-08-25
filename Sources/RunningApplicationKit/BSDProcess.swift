@@ -48,20 +48,28 @@ enum BSDProcess {
     // and distinguishing arm64 from arm64e via cpusubtype.
     private static let PROC_PIDARCHINFO: Int32 = 19
 
-    static func architecture(for pid: pid_t) -> Architecture? {
+    /// The raw CPU type and subtype the kernel is running this process as.
+    ///
+    /// Also used to pick the matching slice out of a universal binary, so it is exposed
+    /// unmapped rather than only as an ``Architecture``.
+    static func machOArchitecture(for pid: pid_t) -> MachOArchitecture? {
         var info = (cputype: cpu_type_t(0), cpusubtype: cpu_subtype_t(0))
         let size = Int32(MemoryLayout.size(ofValue: info))
         let bytesRead = withUnsafeMutablePointer(to: &info) { pointer in
             proc_pidinfo(pid, PROC_PIDARCHINFO, 0, UnsafeMutableRawPointer(pointer), size)
         }
         guard bytesRead == size else { return nil }
-        return architectureFrom(cputype: info.cputype, cpusubtype: info.cpusubtype)
+        return MachOArchitecture(cpuType: info.cputype, cpuSubtype: info.cpusubtype)
     }
 
-    private static func architectureFrom(cputype: cpu_type_t, cpusubtype: cpu_subtype_t) -> Architecture {
+    static func architecture(for pid: pid_t) -> Architecture? {
+        machOArchitecture(for: pid).map(architecture(of:))
+    }
+
+    static func architecture(of machOArchitecture: MachOArchitecture) -> Architecture {
         // Strip CPU_SUBTYPE_MASK (0xff000000 capability bits) before matching.
-        let subtype = cpusubtype & 0x00ff_ffff
-        switch cputype {
+        let subtype = machOArchitecture.cpuSubtypeWithoutCapabilities
+        switch machOArchitecture.cpuType {
         case CPU_TYPE_ARM64:
             return subtype == CPU_SUBTYPE_ARM64E ? .arm64e : .arm64
         case CPU_TYPE_X86_64: return .x86_64
