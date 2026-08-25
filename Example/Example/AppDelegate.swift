@@ -65,8 +65,9 @@ extension AppDelegate: RunningPickerTabViewController.Delegate {
 
 // MARK: - ExampleContentViewController
 
-/// Wraps the picker tab view controller with a segmented control that flips the
-/// table between loading placeholders and real content.
+/// Wraps the picker tab view controller with two segmented controls: one flips the table
+/// between loading placeholders and real content, the other between the table and list
+/// presentation styles.
 private final class ExampleContentViewController: NSViewController {
     enum SkeletonMode: Int, CaseIterable {
         case skeleton
@@ -82,12 +83,21 @@ private final class ExampleContentViewController: NSViewController {
 
     private let tabViewController: RunningPickerTabViewController
     private let segmentedControl: NSSegmentedControl
+    private let styleSegmentedControl: NSSegmentedControl
+    private let controlStackView = NSStackView()
     private var mode: SkeletonMode = .content
+    private var style: RunningPickerTabViewController.Style = .table
 
     init(tabViewController: RunningPickerTabViewController) {
         self.tabViewController = tabViewController
         self.segmentedControl = NSSegmentedControl(
             labels: SkeletonMode.allCases.map(\.title),
+            trackingMode: .selectOne,
+            target: nil,
+            action: nil
+        )
+        self.styleSegmentedControl = NSSegmentedControl(
+            labels: ["Table", "List"],
             trackingMode: .selectOne,
             target: nil,
             action: nil
@@ -112,23 +122,37 @@ private final class ExampleContentViewController: NSViewController {
         tabView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(tabView)
 
-        segmentedControl.translatesAutoresizingMaskIntoConstraints = false
         segmentedControl.target = self
         segmentedControl.action = #selector(segmentChanged(_:))
         segmentedControl.selectedSegment = mode.rawValue
-        view.addSubview(segmentedControl)
+
+        styleSegmentedControl.target = self
+        styleSegmentedControl.action = #selector(styleSegmentChanged(_:))
+        styleSegmentedControl.selectedSegment = 0
+
+        controlStackView.translatesAutoresizingMaskIntoConstraints = false
+        controlStackView.orientation = .horizontal
+        controlStackView.spacing = 16
+        controlStackView.addArrangedSubview(segmentedControl)
+        controlStackView.addArrangedSubview(styleSegmentedControl)
+        view.addSubview(controlStackView)
 
         NSLayoutConstraint.activate([
-            segmentedControl.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
-            segmentedControl.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            controlStackView.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
+            controlStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
 
-            tabView.topAnchor.constraint(equalTo: segmentedControl.bottomAnchor, constant: 8),
+            tabView.topAnchor.constraint(equalTo: controlStackView.bottomAnchor, constant: 8),
             tabView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tabView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tabView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
         apply(mode: mode)
+    }
+
+    @objc private func styleSegmentChanged(_ sender: NSSegmentedControl) {
+        style = sender.selectedSegment == 1 ? .list : .table
+        tabViewController.setStyle(style)
     }
 
     @objc private func segmentChanged(_ sender: NSSegmentedControl) {
