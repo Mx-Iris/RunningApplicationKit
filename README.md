@@ -57,20 +57,61 @@ extension MyController: RunningPickerTabViewController.Delegate {
 }
 ```
 
-Customize columns and appearance through configuration:
+Customize fields and appearance through configuration:
 
 ```swift
 let picker = RunningPickerTabViewController(
     applicationConfiguration: .init(
         title: "Choose an App",
-        allowsColumns: [.icon, .name, .bundleIdentifier, .architecture]
+        allowsFields: [.icon, .name, .bundleIdentifier, .architecture]
     ),
     processConfiguration: .init(
         title: "Choose a Process",
-        allowsColumns: [.icon, .name, .pid, .executablePath],
+        allowsFields: [.icon, .name, .pid, .executablePath],
         refreshInterval: 3.0
     )
 )
+```
+
+### Presentation Styles
+
+Each tab presents its items as either a multi-column `.table` (the default) or a `.list` of
+rows carrying a name, inline badges, and a subtitle:
+
+```swift
+let picker = RunningPickerTabViewController(
+    applicationConfiguration: .init(style: .list),
+    processConfiguration: .init(style: .list, initialSortField: .pid)
+)
+
+// Or switch at runtime — selection, search text and sort are preserved.
+picker.processStyle = .list
+picker.setStyle(.table)          // both tabs at once
+```
+
+The two styles read the same `allowsFields`, but render it differently:
+
+| | `.table` | `.list` |
+|---|---|---|
+| Layout | one column per field | icon, name, badges, subtitle |
+| Sorting | click a column header | pop-up beside the search field |
+| `platform` | a value in every row | a badge, omitted for the host platform |
+| `isSandboxed` | a mark in every row | a badge, omitted when not sandboxed |
+| Long paths | truncated at the tail inside the column | full row width, truncated in the middle |
+
+The list style omits badges whose value is unremarkable, which is what keeps it readable:
+on a machine with an iOS Simulator running, 391 of 400 processes report `macOS` and only 22
+are sandboxed, so as columns those two fields print the same thing in nearly every row.
+
+Row height, cell spacing, and icon size default to values chosen per style, and per tab
+where they differ — a list icon is 34pt in Applications, where every app has its own icon,
+but 22pt in Processes, where nearly all processes share one generic icon. Setting any of
+them explicitly overrides the default:
+
+```swift
+var configuration = RunningPickerTabViewController.ProcessConfiguration(style: .list)
+configuration.rowHeight   // 44, from the style
+configuration.rowHeight = 52
 ```
 
 ### Observing Applications
@@ -164,6 +205,11 @@ process.isSandboxed        // Bool
 
 Both conform to the `RunningItem` protocol (`processIdentifier`, `name`, `icon`, `architecture`,
 `isSandboxed`, `platform`).
+
+> **Renamed in this release.** `allowsColumns` is now `allowsFields`, and `ProcessColumn` /
+> `ApplicationColumn` are now `ProcessField` / `ApplicationField` — a field is not
+> necessarily rendered as a column. The old spellings still work and are marked deprecated;
+> they will be removed in the next minor release.
 
 ### Platform
 

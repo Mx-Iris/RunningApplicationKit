@@ -14,6 +14,7 @@ RunningApplicationKit 的内部文档。逐条列出本目录下所有文档及�
 | 文档 | 说明 |
 |------|------|
 | [0001-simulator-platform-detection.md](Evolutions/0001-simulator-platform-detection.md) | 读 Mach-O `LC_BUILD_VERSION` 判定进程平台，在 Processes 标签页标出模拟器进程 |
+| [0002-picker-presentation-styles.md](Evolutions/0002-picker-presentation-styles.md) | 给两个标签页各加一个 `style`，表格之外新增列表样式；`allowsColumns` 改名为 `allowsFields` 并保留弃用别名 |
 
 ## Internal —— 实现说明
 
@@ -22,14 +23,16 @@ RunningApplicationKit 的内部文档。逐条列出本目录下所有文档及�
 | 文档 | 说明 |
 |------|------|
 | [PlatformDetection.md](Internal/PlatformDetection.md) | 平台识别的落地细节：内核为什么问不到、slice 四级回退的实测依据、变异测试结论与已知降级 |
+| [PresentationStyles.md](Internal/PresentationStyles.md) | 表格与列表两种呈现的落地细节：为什么列表仍是 NSTableView、样式默认值怎么不破坏公开类型、旧 init 消歧义的约束、骨架屏与提案的差异 |
 
 ## 术语表
 
 | 文档 | 说明 |
 |------|------|
-| [Glossary.md](Glossary.md) | 项目术语：guest 进程、platform 与 architecture 之别、ExclaveCore / ExclaveKit |
+| [Glossary.md](Glossary.md) | 项目术语：field 与 column 之别、style、guest 进程、platform 与 architecture 之别、ExclaveCore / ExclaveKit |
 
 ## 历史文档
 
-`docs/plans/` 下有两份 2026-03-08 的旧格式文档（进程支持的 design 与 implementation），
-早于本目录建立，保持原样不动，不纳入本索引的维护范围。
+`docs/plans/` 下曾有两份 2026-03-08 的旧格式文档（进程支持的 design 与 implementation），
+早于本目录建立。它们随本目录启用一并删除 —— 同一件事拆成 design 与 implementation 两篇，
+没有任何一份是权威的，正是提案制要避免的形态。
