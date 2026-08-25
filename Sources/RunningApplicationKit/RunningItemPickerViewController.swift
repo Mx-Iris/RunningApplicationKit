@@ -1,6 +1,6 @@
 import AppKit
 
-protocol PickerColumn: RawRepresentable where RawValue == String {
+protocol PickerField: RawRepresentable where RawValue == String {
     var title: String { get }
     var preferredWidth: CGFloat { get }
     var minWidth: CGFloat? { get }
@@ -9,27 +9,39 @@ protocol PickerColumn: RawRepresentable where RawValue == String {
 }
 
 struct BaseConfiguration {
+    var style: RunningPickerTabViewController.Style
     var title: String
     var description: String
     var cancelButtonTitle: String
     var confirmButtonTitle: String
     var rowHeight: CGFloat
     var cellSpacing: CGSize
+    var iconSize: CGFloat
+    var initialSortFieldIdentifier: String?
+    var initialSortAscending: Bool
 
     init(
+        style: RunningPickerTabViewController.Style = .table,
         title: String = "",
         description: String = "",
         cancelButtonTitle: String = "Cancel",
         confirmButtonTitle: String = "Confirm",
         rowHeight: CGFloat = 25,
-        cellSpacing: CGSize = .init(width: 0, height: 10)
+        cellSpacing: CGSize = .init(width: 0, height: 10),
+        iconSize: CGFloat = 20,
+        initialSortFieldIdentifier: String? = nil,
+        initialSortAscending: Bool = true
     ) {
+        self.style = style
         self.title = title
         self.description = description
         self.cancelButtonTitle = cancelButtonTitle
         self.confirmButtonTitle = confirmButtonTitle
         self.rowHeight = rowHeight
         self.cellSpacing = cellSpacing
+        self.iconSize = iconSize
+        self.initialSortFieldIdentifier = initialSortFieldIdentifier
+        self.initialSortAscending = initialSortAscending
     }
 }
 
@@ -53,11 +65,28 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
     let titleStackView = NSStackView()
     let bottomStackView = NSStackView()
     let searchField = NSSearchField()
+    /// Sorting entry point for the list style, which has no column headers to click.
+    private(set) lazy var sortControl = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let searchRowStackView = NSStackView()
 
     private lazy var dataSource = makeDataSource()
     private var cachedItems: [Item] = []
     private var sortColumnIdentifier: String?
     private var sortAscending: Bool = true
+
+    /// The list style is a table with one full-width column and no header, which keeps
+    /// selection, type-select, context menus and the diffable data source working exactly
+    /// as they do in the table style. Its identifier is ``ListRowColumn/identifier``.
+    private(set) var presentationStyle: RunningPickerTabViewController.Style = .table
+    /// Fields that can be sorted on, in configured order. A field is sortable exactly
+    /// when it has a header title -- the same rule the table style uses to decide whether
+    /// a column gets a sort descriptor.
+    private var sortableFields: [(identifier: String, title: String)] = []
+    private var searchFieldWidthConstraint: NSLayoutConstraint?
+    private var hasAppliedInitialSort = false
+    private var listIconSize: CGFloat = 22
+    /// Field identifiers in configured order, used to lay out a list row.
+    private var configuredFieldIdentifiers: [String] = []
 
     private let skeletonCoordinator = SkeletonTableViewCoordinator()
     private var hasShownInitialData = false
@@ -82,8 +111,19 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
     /// Configure the table columns. Subclasses must call `addTableColumn` for each column.
     func configureColumns() {}
 
-    /// Return a cell view for the given column and item.
+    /// Return a cell view for the given column and item. Table style only -- the list
+    /// style builds its row in the base class so that the layout rules stay uniform.
     func makeCellView(for tableColumn: NSTableColumn, item: Item) -> NSView? { nil }
+
+    /// Return the display string for a field, used to build a list row's subtitle.
+    /// Subclasses override to add their own fields and defer to `super` for shared ones.
+    func fieldValue(_ fieldIdentifier: String, for item: Item) -> String? {
+        switch fieldIdentifier {
+        case "pid": "\(item.processIdentifier)"
+        case "architecture": item.architecture?.description
+        default: nil
+        }
+    }
 
     /// Return context menu items for the given item.
     func contextMenuItems(for item: Item) -> [NSMenuItem] { [] }
@@ -117,7 +157,9 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
 
         view.addSubview(scrollView)
         view.addSubview(topStackView)
+        view.addSubview(searchRowStackView)
         view.addSubview(bottomStackView)
+        searchRowStackView.translatesAutoresizingMaskIntoConstraints = false
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.hasVerticalScroller = true
@@ -130,7 +172,11 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
             topStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 0),
             topStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 0),
 
-            scrollView.topAnchor.constraint(equalTo: topStackView.bottomAnchor, constant: 20),
+            searchRowStackView.topAnchor.constraint(equalTo: topStackView.bottomAnchor, constant: 12),
+            searchRowStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            searchRowStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+
+            scrollView.topAnchor.constraint(equalTo: searchRowStackView.bottomAnchor, constant: 12),
             scrollView.bottomAnchor.constraint(equalTo: bottomStackView.topAnchor, constant: -20),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 0),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 0),
@@ -139,8 +185,11 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
             bottomStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 0),
             bottomStackView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 0),
 
-            searchField.widthAnchor.constraint(equalToConstant: 300),
         ])
+
+        let searchFieldWidth = searchField.widthAnchor.constraint(equalToConstant: 300)
+        searchFieldWidth.isActive = true
+        searchFieldWidthConstraint = searchFieldWidth
 
         topStackView.orientation = .horizontal
         topStackView.spacing = 10
@@ -148,6 +197,14 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
         topStackView.alignment = .top
         topStackView.addArrangedSubview(titleStackView)
         topStackView.addArrangedSubview(searchField)
+
+        searchRowStackView.orientation = .horizontal
+        searchRowStackView.spacing = 10
+        searchRowStackView.distribution = .fill
+        searchRowStackView.alignment = .centerY
+        searchRowStackView.addArrangedSubview(sortControl)
+        sortControl.setContentHuggingPriority(.required, for: .horizontal)
+        sortControl.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         titleStackView.orientation = .vertical
         titleStackView.spacing = 10
@@ -356,33 +413,238 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
         descriptionLabel.stringValue = config.description
         cancelButton.title = config.cancelButtonTitle
         confirmButton.title = config.confirmButtonTitle
+        presentationStyle = config.style
+        listIconSize = config.iconSize
+        if !hasAppliedInitialSort, let identifier = config.initialSortFieldIdentifier {
+            hasAppliedInitialSort = true
+            sortColumnIdentifier = identifier
+            sortAscending = config.initialSortAscending
+        }
         tableView.rowHeight = config.rowHeight
         tableView.intercellSpacing = config.cellSpacing
+        applyStyleToChrome()
         if skeletonIsVisible,
            skeletonCoordinator.updatePlaceholderRowCount(for: tableView, visibleHeight: scrollView.contentView.bounds.height) {
             tableView.reloadData()
         }
     }
 
-    func configureColumns<Column: PickerColumn>(_ columns: [Column]) {
-        for column in columns {
-            addTableColumn(
-                identifier: column.rawValue,
-                title: column.title,
-                preferredWidth: column.preferredWidth,
-                minWidth: column.minWidth,
-                maxWidth: column.maxWidth,
-                headerAlignment: column.headerAlignment
+    func configureColumns<Field: PickerField>(_ fields: [Field]) {
+        configuredFieldIdentifiers = fields.map(\.rawValue)
+        sortableFields = fields.filter { !$0.title.isEmpty }.map { (identifier: $0.rawValue, title: $0.title) }
+        rebuildSortMenu()
+
+        for column in tableView.tableColumns {
+            tableView.removeTableColumn(column)
+        }
+
+        switch presentationStyle {
+        case .table:
+            for field in fields {
+                addTableColumn(
+                    identifier: field.rawValue,
+                    title: field.title,
+                    preferredWidth: field.preferredWidth,
+                    minWidth: field.minWidth,
+                    maxWidth: field.maxWidth,
+                    headerAlignment: field.headerAlignment
+                )
+            }
+            skeletonCoordinator.listRowLayout = nil
+            let iconStyleIdentifiers: Set<String> = ["icon", "sandboxed"]
+            skeletonCoordinator.columns = fields.map { field in
+                SkeletonColumnDescriptor(
+                    identifier: field.rawValue,
+                    style: iconStyleIdentifiers.contains(field.rawValue) ? .icon : .text,
+                    alignment: field.headerAlignment ?? .left
+                )
+            }
+
+        case .list:
+            let column = NSTableColumn(identifier: .init(ListRowColumn.identifier))
+            column.title = ""
+            column.resizingMask = .autoresizingMask
+            tableView.addTableColumn(column)
+
+            // A list row is one cell, not one cell per column, so the coordinator vends a
+            // composite placeholder. Its two text bars still read `SkeletonAppearance` as
+            // column 0 and 1, so every existing shimmer and width knob keeps working and
+            // no skeleton API had to grow.
+            skeletonCoordinator.columns = []
+            skeletonCoordinator.listRowLayout = .init(
+                iconSize: listIconSize,
+                showsIcon: configuredFieldIdentifiers.contains("icon")
             )
         }
-        let iconStyleIdentifiers: Set<String> = ["icon", "sandboxed"]
-        skeletonCoordinator.columns = columns.map { column in
-            SkeletonColumnDescriptor(
-                identifier: column.rawValue,
-                style: iconStyleIdentifiers.contains(column.rawValue) ? .icon : .text,
-                alignment: column.headerAlignment ?? .left
-            )
+
+        applyStyleToChrome()
+    }
+
+    /// Show or hide the parts of the chrome that only one style uses, and move the search
+    /// field between the title row and its own full-width row.
+    private func applyStyleToChrome() {
+        if presentationStyle.showsColumnHeaders {
+            if tableView.headerView == nil {
+                tableView.headerView = NSTableHeaderView()
+            }
+        } else {
+            tableView.headerView = nil
         }
+
+        sortControl.isHidden = !presentationStyle.showsSortControl
+        searchRowStackView.isHidden = !presentationStyle.searchFieldFillsWidth
+
+        let searchFieldBelongsInSearchRow = presentationStyle.searchFieldFillsWidth
+        let currentContainer: NSStackView? = searchField.superview as? NSStackView
+        let desiredContainer = searchFieldBelongsInSearchRow ? searchRowStackView : topStackView
+
+        if currentContainer !== desiredContainer {
+            currentContainer?.removeArrangedSubview(searchField)
+            searchField.removeFromSuperview()
+            if searchFieldBelongsInSearchRow {
+                desiredContainer.insertArrangedSubview(searchField, at: 0)
+            } else {
+                desiredContainer.addArrangedSubview(searchField)
+            }
+        }
+
+        // Fixed width beside the title, full width on its own row.
+        searchFieldWidthConstraint?.isActive = !searchFieldBelongsInSearchRow
+        updateSortControlTitle()
+    }
+
+    // MARK: - Sorting
+
+    private func rebuildSortMenu() {
+        let menu = NSMenu()
+        for field in sortableFields {
+            let menuItem = NSMenuItem(title: field.title, action: #selector(sortFieldSelected(_:)), keyEquivalent: "")
+            menuItem.target = self
+            menuItem.representedObject = field.identifier
+            menu.addItem(menuItem)
+        }
+        sortControl.menu = menu
+        updateSortControlTitle()
+    }
+
+    /// Marks the active field with a direction arrow, so the button shows both what the
+    /// rows are sorted by and which way without being opened.
+    private func updateSortControlTitle() {
+        let arrow = sortAscending ? " ↑" : " ↓"
+        for menuItem in sortControl.menu?.items ?? [] {
+            guard let identifier = menuItem.representedObject as? String,
+                  let field = sortableFields.first(where: { $0.identifier == identifier }) else { continue }
+            menuItem.title = identifier == sortColumnIdentifier ? field.title + arrow : field.title
+        }
+        if let sortColumnIdentifier,
+           let index = sortableFields.firstIndex(where: { $0.identifier == sortColumnIdentifier }) {
+            sortControl.selectItem(at: index)
+        }
+    }
+
+    @objc private func sortFieldSelected(_ sender: NSMenuItem) {
+        guard let identifier = sender.representedObject as? String else { return }
+        if sortColumnIdentifier == identifier {
+            // Re-picking the active field flips the direction, matching how clicking an
+            // already-sorted column header behaves in the table style.
+            sortAscending.toggle()
+        } else {
+            sortColumnIdentifier = identifier
+            sortAscending = true
+        }
+        updateSortControlTitle()
+        applyFilter()
+    }
+
+    /// Rebuild the table for a new presentation style, preserving what the user can see:
+    /// selection, search text and sort survive; scroll position is best-effort, since the
+    /// row height changes underneath it — the selected row is scrolled back into view.
+    ///
+    /// The cell views differ per style, so the table is reloaded rather than diffed.
+    func applyStyleChange(baseConfiguration: BaseConfiguration, reconfigureColumns: () -> Void) {
+        guard isViewLoaded else {
+            applyBaseConfiguration(baseConfiguration)
+            return
+        }
+
+        let selectedItem = tableView.selectedRow >= 0
+            ? dataSource.itemIdentifier(forRow: tableView.selectedRow)
+            : nil
+
+        applyBaseConfiguration(baseConfiguration)
+        reconfigureColumns()
+
+        if skeletonIsVisible {
+            _ = skeletonCoordinator.updatePlaceholderRowCount(
+                for: tableView,
+                visibleHeight: scrollView.contentView.bounds.height
+            )
+            tableView.reloadData()
+            skeletonCoordinator.setAnimating(true, in: tableView)
+            return
+        }
+
+        tableView.reloadData()
+        applyFilter(animatingDifferences: false)
+
+        if let selectedItem,
+           let row = dataSource.row(forItemIdentifier: selectedItem), row >= 0 {
+            tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            tableView.scrollRowToVisible(row)
+        }
+    }
+
+    // MARK: - List Rows
+
+    /// Assemble a list row. The rules are fixed rather than configurable: fields are
+    /// placed by what they mean, and the order within the subtitle follows the configured
+    /// field order.
+    private func makeListRowCellView(for item: Item) -> NSView {
+        tableView.makeView(ofClass: ListRowTableCellView.self) { [weak self] cell in
+            guard let self else { return }
+            cell.iconSize = self.listIconSize
+            cell.showsIcon = self.configuredFieldIdentifiers.contains("icon")
+            cell.image = item.icon
+            cell.title = item.name
+            cell.badges = self.listBadges(for: item)
+            cell.subtitle = self.listSubtitle(for: item)
+        }
+    }
+
+    /// Badges are rendered only when they say something. A host-platform item gets no
+    /// platform badge and a non-sandboxed item gets no sandbox badge -- which is the whole
+    /// point of this style over a column that must print a value in every single row.
+    private func listBadges(for item: Item) -> [ListRowBadge] {
+        var badges: [ListRowBadge] = []
+
+        if configuredFieldIdentifiers.contains("platform") {
+            if let platform = item.platform {
+                if platform.isSimulator {
+                    badges.append(.text(platform.description, .emphasis))
+                } else if platform != .macOS {
+                    badges.append(.text(platform.description, .neutral))
+                }
+            } else {
+                badges.append(.text("Unknown", .caution))
+            }
+        }
+
+        if configuredFieldIdentifiers.contains("sandboxed"), item.isSandboxed {
+            badges.append(.symbol(name: "lock.fill", tone: .affirmative))
+        }
+
+        return badges
+    }
+
+    /// Everything that is neither the icon, the name, nor a badge goes into the subtitle,
+    /// in configured order.
+    private func listSubtitle(for item: Item) -> String {
+        let placedElsewhere: Set<String> = ["icon", "name", "platform", "sandboxed"]
+        return configuredFieldIdentifiers
+            .filter { !placedElsewhere.contains($0) }
+            .compactMap { fieldValue($0, for: item) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "  ·  ")
     }
 
     func addTableColumn(identifier: String, title: String, preferredWidth: CGFloat, minWidth: CGFloat? = nil, maxWidth: CGFloat? = nil, headerAlignment: NSTextAlignment? = nil) {
@@ -529,9 +791,12 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
     // MARK: - DataSource
 
     private func makeDataSource() -> DataSource {
-        DataSource(tableView: tableView) { [weak self] tableView, tableColumn, _, item in
-            guard let self, let cellView = self.makeCellView(for: tableColumn, item: item) else { return NSView() }
-            return cellView
+        DataSource(tableView: tableView) { [weak self] _, tableColumn, _, item in
+            guard let self else { return NSView() }
+            if self.presentationStyle == .list {
+                return self.makeListRowCellView(for: item)
+            }
+            return self.makeCellView(for: tableColumn, item: item) ?? NSView()
         }
     }
 

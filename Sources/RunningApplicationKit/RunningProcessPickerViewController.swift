@@ -1,7 +1,7 @@
 import AppKit
 
 final class RunningProcessPickerViewController: RunningItemPickerViewController<RunningProcess> {
-    typealias Column = RunningPickerTabViewController.ProcessColumn
+    typealias Column = RunningPickerTabViewController.ProcessField
     typealias Configuration = RunningPickerTabViewController.ProcessConfiguration
 
     @MainActor protocol Delegate: AnyObject {
@@ -46,6 +46,15 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
         refreshInBackground()
     }
 
+    /// Switch this tab between the table and list presentations at runtime.
+    func updateStyle(_ style: RunningPickerTabViewController.Style) {
+        guard configuration.style != style else { return }
+        configuration.style = style
+        applyStyleChange(baseConfiguration: configuration.baseConfiguration) { [weak self] in
+            self?.configureColumns()
+        }
+    }
+
     // MARK: - Overrides
 
     override func loadItems() -> [RunningProcess] {
@@ -57,7 +66,7 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
     }
 
     override func configureColumns() {
-        configureColumns(configuration.allowsColumns)
+        configureColumns(configuration.allowsFields)
     }
 
     override func makeCellView(for tableColumn: NSTableColumn, item: RunningProcess) -> NSView? {
@@ -75,6 +84,13 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
         default:
             return nil
         }
+    }
+
+    override func fieldValue(_ fieldIdentifier: String, for item: RunningProcess) -> String? {
+        if fieldIdentifier == Column.executablePath.rawValue {
+            return item.executablePath
+        }
+        return super.fieldValue(fieldIdentifier, for: item)
     }
 
     override func compareItems(_ lhs: RunningProcess, _ rhs: RunningProcess, columnIdentifier: String) -> ComparisonResult {

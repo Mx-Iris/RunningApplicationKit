@@ -19,9 +19,9 @@ public final class RunningPickerTabViewController: NSViewController {
         }
     }
 
-    // MARK: - Application Column
+    // MARK: - Application Field
 
-    public enum ApplicationColumn: String, CaseIterable, PickerColumn {
+    public enum ApplicationField: String, CaseIterable, PickerField {
         case icon
         case name
         case bundleIdentifier
@@ -73,14 +73,96 @@ public final class RunningPickerTabViewController: NSViewController {
     // MARK: - Application Configuration
 
     public struct ApplicationConfiguration {
+        /// How this tab presents its items. Changing it at runtime rebuilds the rows.
+        public var style: Style
+
         public var title: String
         public var description: String
         public var cancelButtonTitle: String
         public var confirmButtonTitle: String
-        public var rowHeight: CGFloat
-        public var cellSpacing: CGSize
-        public var allowsColumns: [ApplicationColumn]
+        public var allowsFields: [ApplicationField]
 
+
+        /// Sort applied when the tab first appears. The user may change it from the sort
+        /// pop-up (list style) or by clicking a column header (table style); that change
+        /// is not reported back to the caller.
+        public var initialSortField: ApplicationField?
+        public var initialSortAscending: Bool
+
+        // Style-defaulted values. The public properties below stay non-optional so that
+        // nothing about their type changes for callers; the optional backing storage is
+        // what lets "never set" fall back to the style's default -- and lets an unset
+        // value follow along when the style is switched at runtime.
+        private var explicitRowHeight: CGFloat?
+        private var explicitCellSpacing: CGSize?
+        private var explicitIconSize: CGFloat?
+
+        public var rowHeight: CGFloat {
+            get { explicitRowHeight ?? style.defaultRowHeight }
+            set { explicitRowHeight = newValue }
+        }
+
+        public var cellSpacing: CGSize {
+            get { explicitCellSpacing ?? style.defaultCellSpacing }
+            set { explicitCellSpacing = newValue }
+        }
+
+        /// Icon edge length. Independent of ``rowHeight``: table icons could simply track
+        /// the row height, but a list row is tall enough that the two must be decoupled.
+        public var iconSize: CGFloat {
+            get { explicitIconSize ?? defaultIconSize }
+            set { explicitIconSize = newValue }
+        }
+
+        /// 34pt in the list style: every running application resolves to its own distinct icon, so a larger icon genuinely aids recognition.
+        private var defaultIconSize: CGFloat {
+            switch style {
+            case .table: 20
+            case .list: 34
+            }
+        }
+
+        public init(
+            style: Style = .table,
+            title: String = "Running Applications",
+            description: String = "Select an application",
+            cancelButtonTitle: String = "Cancel",
+            confirmButtonTitle: String = "Confirm",
+            rowHeight: CGFloat? = nil,
+            cellSpacing: CGSize? = nil,
+            iconSize: CGFloat? = nil,
+            allowsFields: [ApplicationField] = ApplicationField.allCases,
+            initialSortField: ApplicationField? = nil,
+            initialSortAscending: Bool = true
+        ) {
+            self.style = style
+            self.title = title
+            self.description = description
+            self.cancelButtonTitle = cancelButtonTitle
+            self.confirmButtonTitle = confirmButtonTitle
+            self.explicitRowHeight = rowHeight
+            self.explicitCellSpacing = cellSpacing
+            self.explicitIconSize = iconSize
+            self.allowsFields = allowsFields
+            self.initialSortField = initialSortField
+            self.initialSortAscending = initialSortAscending
+        }
+
+        /// Superseded by ``allowsFields``, which is named for the fact that a field does
+        /// not have to be rendered as a column.
+        @available(*, deprecated, renamed: "allowsFields")
+        public var allowsColumns: [ApplicationField] {
+            get { allowsFields }
+            set { allowsFields = newValue }
+        }
+
+        /// Superseded by the initializer taking `allowsFields`.
+        ///
+        /// `allowsColumns` deliberately carries no default value: that is what keeps this
+        /// overload from colliding with the one above when a caller writes
+        /// `ApplicationConfiguration()`. Giving it a default would make every no-argument call
+        /// ambiguous.
+        @available(*, deprecated, message: "Use init(style:…allowsFields:…) instead")
         public init(
             title: String = "Running Applications",
             description: String = "Select an application",
@@ -88,32 +170,39 @@ public final class RunningPickerTabViewController: NSViewController {
             confirmButtonTitle: String = "Confirm",
             rowHeight: CGFloat = 25,
             cellSpacing: CGSize = .init(width: 0, height: 10),
-            allowsColumns: [ApplicationColumn] = ApplicationColumn.allCases
+            allowsColumns: [ApplicationField]
         ) {
-            self.title = title
-            self.description = description
-            self.cancelButtonTitle = cancelButtonTitle
-            self.confirmButtonTitle = confirmButtonTitle
-            self.rowHeight = rowHeight
-            self.cellSpacing = cellSpacing
-            self.allowsColumns = allowsColumns
-        }
-
-        var baseConfiguration: BaseConfiguration {
-            .init(
+            self.init(
+                style: .table,
                 title: title,
                 description: description,
                 cancelButtonTitle: cancelButtonTitle,
                 confirmButtonTitle: confirmButtonTitle,
                 rowHeight: rowHeight,
-                cellSpacing: cellSpacing
+                cellSpacing: cellSpacing,
+                allowsFields: allowsColumns
+            )
+        }
+
+        var baseConfiguration: BaseConfiguration {
+            .init(
+                style: style,
+                title: title,
+                description: description,
+                cancelButtonTitle: cancelButtonTitle,
+                confirmButtonTitle: confirmButtonTitle,
+                rowHeight: rowHeight,
+                cellSpacing: cellSpacing,
+                iconSize: iconSize,
+                initialSortFieldIdentifier: initialSortField?.rawValue,
+                initialSortAscending: initialSortAscending
             )
         }
     }
 
-    // MARK: - Process Column
+    // MARK: - Process Field
 
-    public enum ProcessColumn: String, CaseIterable, PickerColumn {
+    public enum ProcessField: String, CaseIterable, PickerField {
         case icon
         case name
         case pid
@@ -170,15 +259,99 @@ public final class RunningPickerTabViewController: NSViewController {
     // MARK: - Process Configuration
 
     public struct ProcessConfiguration {
+        /// How this tab presents its items. Changing it at runtime rebuilds the rows.
+        public var style: Style
+
         public var title: String
         public var description: String
         public var cancelButtonTitle: String
         public var confirmButtonTitle: String
-        public var rowHeight: CGFloat
-        public var cellSpacing: CGSize
-        public var allowsColumns: [ProcessColumn]
+        public var allowsFields: [ProcessField]
         public var refreshInterval: TimeInterval
 
+
+        /// Sort applied when the tab first appears. The user may change it from the sort
+        /// pop-up (list style) or by clicking a column header (table style); that change
+        /// is not reported back to the caller.
+        public var initialSortField: ProcessField?
+        public var initialSortAscending: Bool
+
+        // Style-defaulted values. The public properties below stay non-optional so that
+        // nothing about their type changes for callers; the optional backing storage is
+        // what lets "never set" fall back to the style's default -- and lets an unset
+        // value follow along when the style is switched at runtime.
+        private var explicitRowHeight: CGFloat?
+        private var explicitCellSpacing: CGSize?
+        private var explicitIconSize: CGFloat?
+
+        public var rowHeight: CGFloat {
+            get { explicitRowHeight ?? style.defaultRowHeight }
+            set { explicitRowHeight = newValue }
+        }
+
+        public var cellSpacing: CGSize {
+            get { explicitCellSpacing ?? style.defaultCellSpacing }
+            set { explicitCellSpacing = newValue }
+        }
+
+        /// Icon edge length. Independent of ``rowHeight``: table icons could simply track
+        /// the row height, but a list row is tall enough that the two must be decoupled.
+        public var iconSize: CGFloat {
+            get { explicitIconSize ?? defaultIconSize }
+            set { explicitIconSize = newValue }
+        }
+
+        /// 22pt in the list style: measured on the development machine, 400 processes resolve to just 2 distinct icons, so a larger icon would only magnify the repetition.
+        private var defaultIconSize: CGFloat {
+            switch style {
+            case .table: 20
+            case .list: 22
+            }
+        }
+
+        public init(
+            style: Style = .table,
+            title: String = "Running Processes",
+            description: String = "Select a process",
+            cancelButtonTitle: String = "Cancel",
+            confirmButtonTitle: String = "Confirm",
+            rowHeight: CGFloat? = nil,
+            cellSpacing: CGSize? = nil,
+            iconSize: CGFloat? = nil,
+            allowsFields: [ProcessField] = ProcessField.allCases,
+            initialSortField: ProcessField? = nil,
+            initialSortAscending: Bool = true,
+            refreshInterval: TimeInterval = 2.0
+        ) {
+            self.style = style
+            self.title = title
+            self.description = description
+            self.cancelButtonTitle = cancelButtonTitle
+            self.confirmButtonTitle = confirmButtonTitle
+            self.explicitRowHeight = rowHeight
+            self.explicitCellSpacing = cellSpacing
+            self.explicitIconSize = iconSize
+            self.allowsFields = allowsFields
+            self.initialSortField = initialSortField
+            self.initialSortAscending = initialSortAscending
+            self.refreshInterval = refreshInterval
+        }
+
+        /// Superseded by ``allowsFields``, which is named for the fact that a field does
+        /// not have to be rendered as a column.
+        @available(*, deprecated, renamed: "allowsFields")
+        public var allowsColumns: [ProcessField] {
+            get { allowsFields }
+            set { allowsFields = newValue }
+        }
+
+        /// Superseded by the initializer taking `allowsFields`.
+        ///
+        /// `allowsColumns` deliberately carries no default value: that is what keeps this
+        /// overload from colliding with the one above when a caller writes
+        /// `ProcessConfiguration()`. Giving it a default would make every no-argument call
+        /// ambiguous.
+        @available(*, deprecated, message: "Use init(style:…allowsFields:…) instead")
         public init(
             title: String = "Running Processes",
             description: String = "Select a process",
@@ -186,27 +359,34 @@ public final class RunningPickerTabViewController: NSViewController {
             confirmButtonTitle: String = "Confirm",
             rowHeight: CGFloat = 25,
             cellSpacing: CGSize = .init(width: 0, height: 10),
-            allowsColumns: [ProcessColumn] = ProcessColumn.allCases,
+            allowsColumns: [ProcessField],
             refreshInterval: TimeInterval = 2.0
         ) {
-            self.title = title
-            self.description = description
-            self.cancelButtonTitle = cancelButtonTitle
-            self.confirmButtonTitle = confirmButtonTitle
-            self.rowHeight = rowHeight
-            self.cellSpacing = cellSpacing
-            self.allowsColumns = allowsColumns
-            self.refreshInterval = refreshInterval
-        }
-
-        var baseConfiguration: BaseConfiguration {
-            .init(
+            self.init(
+                style: .table,
                 title: title,
                 description: description,
                 cancelButtonTitle: cancelButtonTitle,
                 confirmButtonTitle: confirmButtonTitle,
                 rowHeight: rowHeight,
-                cellSpacing: cellSpacing
+                cellSpacing: cellSpacing,
+                allowsFields: allowsColumns,
+                refreshInterval: refreshInterval
+            )
+        }
+
+        var baseConfiguration: BaseConfiguration {
+            .init(
+                style: style,
+                title: title,
+                description: description,
+                cancelButtonTitle: cancelButtonTitle,
+                confirmButtonTitle: confirmButtonTitle,
+                rowHeight: rowHeight,
+                cellSpacing: cellSpacing,
+                iconSize: iconSize,
+                initialSortFieldIdentifier: initialSortField?.rawValue,
+                initialSortAscending: initialSortAscending
             )
         }
     }
@@ -287,6 +467,27 @@ public final class RunningPickerTabViewController: NSViewController {
         // via _goodTabViewContentSize, and by the time the user switches tabs.
         applicationPickerViewController.prefetch()
         processPickerViewController.prefetch()
+    }
+
+    // MARK: - Presentation Style
+
+    /// Presentation style of the Applications tab. Setting it rebuilds that tab's rows,
+    /// preserving selection, search text and sort.
+    public var applicationStyle: Style {
+        get { applicationPickerViewController.configuration.style }
+        set { applicationPickerViewController.updateStyle(newValue) }
+    }
+
+    /// Presentation style of the Processes tab.
+    public var processStyle: Style {
+        get { processPickerViewController.configuration.style }
+        set { processPickerViewController.updateStyle(newValue) }
+    }
+
+    /// Apply one style to both tabs.
+    public func setStyle(_ style: Style) {
+        applicationStyle = style
+        processStyle = style
     }
 
     // MARK: - Skeleton

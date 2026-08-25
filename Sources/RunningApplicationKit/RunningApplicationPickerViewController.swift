@@ -1,7 +1,7 @@
 import AppKit
 
 final class RunningApplicationPickerViewController: RunningItemPickerViewController<RunningApplication> {
-    typealias Column = RunningPickerTabViewController.ApplicationColumn
+    typealias Column = RunningPickerTabViewController.ApplicationField
     typealias Configuration = RunningPickerTabViewController.ApplicationConfiguration
 
     @MainActor protocol Delegate: AnyObject {
@@ -46,6 +46,15 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
         }
     }
 
+    /// Switch this tab between the table and list presentations at runtime.
+    func updateStyle(_ style: RunningPickerTabViewController.Style) {
+        guard configuration.style != style else { return }
+        configuration.style = style
+        applyStyleChange(baseConfiguration: configuration.baseConfiguration) { [weak self] in
+            self?.configureColumns()
+        }
+    }
+
     // MARK: - Overrides
 
     override func loadItems() -> [RunningApplication] {
@@ -56,7 +65,7 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
     }
 
     override func configureColumns() {
-        configureColumns(configuration.allowsColumns)
+        configureColumns(configuration.allowsFields)
     }
 
     override func makeCellView(for tableColumn: NSTableColumn, item: RunningApplication) -> NSView? {
@@ -74,6 +83,13 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
         default:
             return nil
         }
+    }
+
+    override func fieldValue(_ fieldIdentifier: String, for item: RunningApplication) -> String? {
+        if fieldIdentifier == Column.bundleIdentifier.rawValue {
+            return item.bundleIdentifier
+        }
+        return super.fieldValue(fieldIdentifier, for: item)
     }
 
     override func compareItems(_ lhs: RunningApplication, _ rhs: RunningApplication, columnIdentifier: String) -> ComparisonResult {

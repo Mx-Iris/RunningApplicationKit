@@ -8,7 +8,17 @@ import AppKit
 /// disagreeing about the row count.
 @MainActor
 final class SkeletonTableViewCoordinator: NSObject {
+    /// Shape of a list-style placeholder row. Set while the picker is in the list style,
+    /// where there is one full-width column and the per-column placeholders do not apply.
+    struct ListRowLayout {
+        var iconSize: CGFloat
+        var showsIcon: Bool
+    }
+
     var columns: [SkeletonColumnDescriptor] = []
+
+    /// When set, one composite placeholder is vended per row instead of one per column.
+    var listRowLayout: ListRowLayout?
 
     var skeletonAppearance: SkeletonAppearance = .init()
 
@@ -46,7 +56,16 @@ final class SkeletonTableViewCoordinator: NSObject {
         isAnimating = animating
         tableView.enumerateAvailableRowViews { rowView, rowIndex in
             for columnIndex in 0 ..< rowView.numberOfColumns {
-                guard let skeletonCellView = rowView.view(atColumn: columnIndex) as? SkeletonTableCellView else { continue }
+                let cellView = rowView.view(atColumn: columnIndex)
+                if let listRowCellView = cellView as? SkeletonListRowCellView {
+                    if animating {
+                        self.startAnimating(listRowCellView, rowIndex: rowIndex)
+                    } else {
+                        listRowCellView.stopAnimating()
+                    }
+                    continue
+                }
+                guard let skeletonCellView = cellView as? SkeletonTableCellView else { continue }
                 if animating {
                     skeletonCellView.startAnimating(
                         phaseOffset: skeletonAppearance.shimmerPhaseOffset(rowIndex: rowIndex, columnIndex: columnIndex)
@@ -56,6 +75,16 @@ final class SkeletonTableViewCoordinator: NSObject {
                 }
             }
         }
+    }
+
+    /// The two text bars of a list row read their shimmer offsets as column 0 and 1, which
+    /// is what keeps `shimmerColumnStagger` meaningful in a single-column table.
+    private func startAnimating(_ cellView: SkeletonListRowCellView, rowIndex: Int) {
+        cellView.startAnimating(
+            iconPhase: skeletonAppearance.shimmerPhaseOffset(rowIndex: rowIndex, columnIndex: 0),
+            titlePhase: skeletonAppearance.shimmerPhaseOffset(rowIndex: rowIndex, columnIndex: 0),
+            subtitlePhase: skeletonAppearance.shimmerPhaseOffset(rowIndex: rowIndex, columnIndex: 1)
+        )
     }
 }
 
@@ -71,6 +100,20 @@ extension SkeletonTableViewCoordinator: NSTableViewDataSource {
 
 extension SkeletonTableViewCoordinator: NSTableViewDelegate {
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        if let listRowLayout {
+            let cellView = tableView.makeView(ofClass: SkeletonListRowCellView.self) { [skeletonAppearance] cellView in
+                cellView.skeletonAppearance = skeletonAppearance
+                cellView.iconSize = listRowLayout.iconSize
+                cellView.showsIcon = listRowLayout.showsIcon
+                cellView.titleWidthFraction = skeletonAppearance.textBarWidthFraction(rowIndex: row, columnIndex: 0)
+                cellView.subtitleWidthFraction = skeletonAppearance.textBarWidthFraction(rowIndex: row, columnIndex: 1)
+            }
+            if isAnimating {
+                startAnimating(cellView, rowIndex: row)
+            }
+            return cellView
+        }
+
         guard let tableColumn,
               let columnIndex = columns.firstIndex(where: { $0.identifier == tableColumn.identifier.rawValue })
         else { return nil }
