@@ -16,6 +16,10 @@ let package = Package(
         .target(
             name: "RunningApplicationKit"
         ),
+        .testTarget(
+            name: "RunningApplicationKitTests",
+            dependencies: ["RunningApplicationKit"]
+        ),
     ],
     swiftLanguageModes: [.v6],
 )
