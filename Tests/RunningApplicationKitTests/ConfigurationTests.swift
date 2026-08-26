@@ -30,12 +30,13 @@ struct ConfigurationTests {
         #expect(ProcessConfiguration(style: style).rowHeight == expected)
     }
 
-    @Test("Each tab gets its own list icon size")
-    func listIconSizeDiffersPerTab() {
-        // Applications resolve to distinct icons, so a larger icon aids recognition;
-        // processes nearly all share one generic icon, so it would only be bigger noise.
-        #expect(ApplicationConfiguration(style: .list).iconSize == 34)
-        #expect(ProcessConfiguration(style: .list).iconSize == 22)
+    @Test("Both tabs use the same icon size for a given style")
+    func listIconSizeMatchesAcrossTabs() {
+        // These were briefly different per tab, reasoning from how much information the
+        // icons carry. Switching between the tabs made that read as a rendering bug, so
+        // they were unified.
+        #expect(ApplicationConfiguration(style: .list).iconSize == 28)
+        #expect(ProcessConfiguration(style: .list).iconSize == 28)
         #expect(ApplicationConfiguration(style: .table).iconSize == 20)
         #expect(ProcessConfiguration(style: .table).iconSize == 20)
     }
@@ -54,7 +55,7 @@ struct ConfigurationTests {
         #expect(configuration.rowHeight == 25)
         configuration.style = .list
         #expect(configuration.rowHeight == 44)
-        #expect(configuration.iconSize == 22)
+        #expect(configuration.iconSize == 28)
     }
 
     @Test("A value set before a style change stays put")

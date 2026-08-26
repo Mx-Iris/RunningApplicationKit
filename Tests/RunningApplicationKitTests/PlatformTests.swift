@@ -85,6 +85,22 @@ struct PlatformTests {
         #expect(platform.description == expected)
     }
 
+    @Test("Each OS family gets its own badge colour, shared with its simulator")
+    func badgeColoursGroupByFamily() {
+        // The colour answers "which platform", so a simulator matches its family; the
+        // label is what separates them.
+        #expect(Platform.iOS.badgeColor == Platform.iOSSimulator.badgeColor)
+        #expect(Platform.tvOS.badgeColor == Platform.tvOSSimulator.badgeColor)
+        #expect(Platform.watchOS.badgeColor == Platform.watchOSSimulator.badgeColor)
+        #expect(Platform.visionOS.badgeColor == Platform.visionOSSimulator.badgeColor)
+
+        // The families that actually turn up in a process list must be distinguishable
+        // from each other -- this is what "everything is grey" looked like before.
+        let visible: [Platform] = [.iOSSimulator, .macCatalyst, .driverKit, .macOS]
+        let colours = visible.map(\.badgeColor)
+        #expect(Set(colours).count == visible.count, "\(colours)")
+    }
+
     @Test("Search matches both the display wording and the case name", arguments: [
         (Platform.iOSSimulator, "sim"),
         (.iOSSimulator, "simulator"),
