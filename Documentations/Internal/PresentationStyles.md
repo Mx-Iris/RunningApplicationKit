@@ -116,6 +116,28 @@ configureColumns()                                    // 再按 style 建列
 **徽章只在有信息时渲染**：平台是 `macOS` 不渲染，非沙盒不渲染。这是整个样式存在的理由 ——
 表格列必须在每一行印一个值，徽章不必。
 
+### 表格也上徽章，但规则与列表相反
+
+表格初版每一列都是同色文字，只有 Sandbox 列有勾叉 —— 读起来很平。现在 Platform 与 Arch 两列
+改用与列表相同的 pill（`BadgeTableCellView`，共用 `BadgeView`）。
+
+**关键差异是缺省值的处理，两种样式刻意不同**：
+
+| | 列表 | 表格 |
+|---|---|---|
+| 平台是 `macOS` | 不渲染徽章 | 渲染，但用 `secondaryLabelColor` 压下去 |
+
+理由是两种呈现的气质不同：列表的行本来就长短不一，少一个徽章很自然；而表格里一整列空格
+读起来像坏了 —— 这正是之前 Arch 列被抱怨的原因。所以表格「照常显示、把不值得注意的压暗」，
+列表「不值得注意的直接不画」。
+
+**PID 不用 pill**，尽管它也在上色的列里。pill 是给**分类值**的形式，而 PID 是**唯一标识符** ——
+装进胶囊会暗示这个数字能把行分组。改用等宽数字（`monospacedDigitSystemFont`）加次要色：
+等宽让整列数字对齐，次要色让它退到背景。
+
+表格默认行高因此从 25pt 提到 **28pt**（pill 在 25pt 里过于局促）。**弃用的旧 init 仍然显式传
+25pt**，所以走旧 API 的调用方一点变化都没有 —— 这一点有测试钉住。
+
 **配色一个系统家族一个色**（`Platform.badgeColor`，定义在 UI 层而非 `Platform.swift`，
 它是呈现关注点）：iOS 系蓝、tvOS 系紫、watchOS 系粉、visionOS 系靛、Mac Catalyst 青、
 DriverKit 棕、判不出橙、Sandboxed 绿。
@@ -126,6 +148,10 @@ DriverKit 棕、判不出橙、Sandboxed 绿。
 初版所有非模拟器平台统一用 `secondaryLabelColor`，结果 Mac Catalyst 和 DriverKit 在深色下
 糊成一片灰。`badgeColor` 的 switch **刻意不写 `default`** —— 新增平台必须在此处指定颜色，
 不能静默继承别人的。
+
+`Architecture` 另有一套：实测 1428 个进程里 arm64e 占 41.7%、arm64 占 29.4%、x86_64 只有 1 个。
+所以两个 ARM 变体用相近的冷色（蓝 / 靛）表达「都是原生」又能区分，而 x86_64 与 i386 用橙 ——
+在这台机器上跑它们意味着翻译，那才是值得一眼看到的。
 
 沙盒徽章原本是一枚绿色锁形 SF Symbol，改成文字 `Sandboxed`；`ListRowBadge` 因此从带两个 case
 的枚举简化为 `struct { text, color }`，`BadgeView` 的 symbol 分支一并删除。

@@ -95,16 +95,27 @@ The two styles read the same `allowsFields`, but render it differently:
 |---|---|---|
 | Layout | one column per field | icon, name, badges, subtitle |
 | Sorting | click a column header | pop-up beside the search field |
-| `platform` | a value in every row | a badge tinted by OS family, omitted for the host platform |
-| `isSandboxed` | a mark in every row | a `Sandboxed` badge, omitted when not sandboxed |
+| `platform` | a badge in every row, receded for the host platform | a badge, omitted for the host platform |
+| `architecture` | a badge tinted per architecture | plain text in the subtitle |
+| `pid` | monospaced digits, receded | plain text in the subtitle |
+| `isSandboxed` | a checkmark or cross in every row | a `Sandboxed` badge, omitted when not sandboxed |
 | Long paths | truncated at the tail inside the column | full row width, truncated in the middle |
+
+Badges are tinted by category rather than uniformly: one hue per OS family (iOS blue, tvOS
+purple, Mac Catalyst teal, DriverKit brown), and one per architecture, with a translated
+`x86_64` set apart from the native ARM pair. A simulator shares its family's colour — the
+colour answers *which platform*, and the label is what separates a simulator from real
+hardware.
+
+The two styles differ in what they do with an unremarkable value. A list omits it; a table
+prints it in a receded colour, because a column of blanks reads as broken.
 
 The list style omits badges whose value is unremarkable, which is what keeps it readable:
 on a machine with an iOS Simulator running, 391 of 400 processes report `macOS` and only 22
 are sandboxed, so as columns those two fields print the same thing in nearly every row.
 
 Row height, cell spacing, and icon size default to values chosen per style — a list row is
-44pt tall with a 28pt icon, a table row 25pt with a 20pt icon. Setting any of them
+44pt tall with a 28pt icon, a table row 28pt with a 20pt icon. Setting any of them
 explicitly overrides the default:
 
 ```swift
