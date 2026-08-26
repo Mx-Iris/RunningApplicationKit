@@ -111,6 +111,13 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
     /// Configure the table columns. Subclasses must call `addTableColumn` for each column.
     func configureColumns() {}
 
+    /// The configuration to apply on load. Pulled by the base class rather than pushed by
+    /// the subclass, because columns are built from `presentationStyle` and must therefore
+    /// be built *after* the configuration lands -- a subclass calling
+    /// `applyBaseConfiguration` from its own `viewDidLoad` runs too late, after
+    /// `super.viewDidLoad()` has already built the columns.
+    func currentBaseConfiguration() -> BaseConfiguration { .init() }
+
     /// Return a cell view for the given column and item. Table style only -- the list
     /// style builds its row in the base class so that the layout rules stay uniform.
     func makeCellView(for tableColumn: NSTableColumn, item: Item) -> NSView? { nil }
@@ -249,6 +256,7 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
         tableView.dataSource = dataSource
         tableView.delegate = self
 
+        applyBaseConfiguration(currentBaseConfiguration())
         configureColumns()
         setupTableViewMenu()
         reloadData()
@@ -276,6 +284,11 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
 
     override func viewDidLayout() {
         super.viewDidLayout()
+        // The single list column tracks the table's width; the table's width is only known
+        // after layout.
+        if presentationStyle == .list {
+            tableView.sizeLastColumnToFit()
+        }
         // The placeholder row count follows the visible height, which is only
         // known once the scroll view has been laid out.
         guard skeletonIsVisible else { return }
@@ -464,7 +477,14 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
             let column = NSTableColumn(identifier: .init(ListRowColumn.identifier))
             column.title = ""
             column.resizingMask = .autoresizingMask
+            // NSTableColumn starts out 100pt wide. Without both an initial width and the
+            // sizing pass in `viewDidLayout`, every list row renders 100pt across and its
+            // labels truncate to a few characters no matter how wide the window is.
+            column.minWidth = 1
+            column.maxWidth = .greatestFiniteMagnitude
+            column.width = max(1, tableView.bounds.width)
             tableView.addTableColumn(column)
+            tableView.sizeLastColumnToFit()
 
             // A list row is one cell, not one cell per column, so the coordinator vends a
             // composite placeholder. Its two text bars still read `SkeletonAppearance` as
@@ -619,18 +639,20 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
 
         if configuredFieldIdentifiers.contains("platform") {
             if let platform = item.platform {
-                if platform.isSimulator {
-                    badges.append(.text(platform.description, .emphasis))
-                } else if platform != .macOS {
-                    badges.append(.text(platform.description, .neutral))
+                // The host platform is the assumption, so it gets no badge; everything
+                // else is tinted by OS family.
+                if platform != .macOS {
+                    badges.append(.init(text: platform.description, color: platform.badgeColor))
                 }
             } else {
-                badges.append(.text("Unknown", .caution))
+                // Same tint as an unrecognised platform constant: both mean "could not
+                // be pinned down", though for different reasons.
+                badges.append(.init(text: "Unknown", color: .systemOrange))
             }
         }
 
         if configuredFieldIdentifiers.contains("sandboxed"), item.isSandboxed {
-            badges.append(.symbol(name: "lock.fill", tone: .affirmative))
+            badges.append(.init(text: "Sandboxed", color: .systemGreen))
         }
 
         return badges

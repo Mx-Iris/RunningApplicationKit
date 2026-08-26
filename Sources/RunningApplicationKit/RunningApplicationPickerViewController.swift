@@ -32,10 +32,13 @@ final class RunningApplicationPickerViewController: RunningItemPickerViewControl
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func currentBaseConfiguration() -> BaseConfiguration {
+        configuration.baseConfiguration
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         preferredContentSize = .init(width: 800, height: 600)
-        applyBaseConfiguration(configuration.baseConfiguration)
         setupObservation()
     }
 
