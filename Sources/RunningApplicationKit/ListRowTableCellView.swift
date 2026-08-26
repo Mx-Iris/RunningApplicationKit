@@ -14,84 +14,65 @@ enum ListRowColumn {
 /// omitted for the host platform, and the sandbox badge appears only for sandboxed items.
 /// Rendering every value the way a table column must is what produced the wall of repeated
 /// "macOS" and the wall of red crosses that this style exists to remove.
-enum ListRowBadge: Equatable {
-    case text(String, Tone)
-    case symbol(name: String, tone: Tone)
+struct ListRowBadge: Equatable {
+    var text: String
+    /// Tint for both the label and — at low alpha — the pill behind it.
+    var color: NSColor
+}
 
-    enum Tone: Equatable {
-        /// Reserved for what the row is being scanned for — simulator platforms.
-        case emphasis
-        /// Factual but unremarkable, e.g. Mac Catalyst or DriverKit.
-        case neutral
-        /// Something could not be determined.
-        case caution
-        /// A positive attribute worth noticing, e.g. sandboxed.
-        case affirmative
+extension Platform {
+    /// Badge tint, one hue per OS family.
+    ///
+    /// A simulator shares its family's colour rather than getting one of its own: the
+    /// label already says "Simulator", and giving iOS and iOS Simulator different hues
+    /// would mean the colour no longer answers "which platform is this".
+    ///
+    /// Deliberately no `default` branch — a new platform must be assigned a colour here
+    /// rather than silently inheriting one.
+    var badgeColor: NSColor {
+        switch self {
+        case .macOS, .macOSExclaveCore, .macOSExclaveKit: .systemYellow
+        case .iOS, .iOSSimulator, .iOSExclaveCore, .iOSExclaveKit: .systemBlue
+        case .tvOS, .tvOSSimulator, .tvOSExclaveCore, .tvOSExclaveKit: .systemPurple
+        case .watchOS, .watchOSSimulator, .watchOSExclaveCore, .watchOSExclaveKit: .systemPink
+        case .visionOS, .visionOSSimulator, .visionOSExclaveCore, .visionOSExclaveKit: .systemIndigo
+        case .macCatalyst: .systemTeal
+        case .driverKit: .systemBrown
+        // The three below never surface in a process list — they are not ordinary BSD
+        // processes — so they draw from what is left rather than from distinct hues.
+        // `systemCyan` and `systemMint` would suit them better but need macOS 12.
+        case .bridgeOS: .systemGreen
+        case .firmware: .systemRed
+        case .securityEnclaveOS: .systemGray
+        case .unknown: .systemOrange
+        }
     }
 }
 
-extension ListRowBadge.Tone {
-    var foregroundColor: NSColor {
-        switch self {
-        case .emphasis: .controlAccentColor
-        case .neutral: .secondaryLabelColor
-        case .caution: .systemOrange
-        case .affirmative: .systemGreen
-        }
-    }
-
-    var backgroundColor: NSColor {
-        switch self {
-        case .emphasis: .controlAccentColor.withAlphaComponent(0.16)
-        case .neutral: .quaternaryLabelColor.withAlphaComponent(0.5)
-        case .caution: .systemOrange.withAlphaComponent(0.16)
-        case .affirmative: .systemGreen.withAlphaComponent(0.16)
-        }
-    }
-}
-
-/// A pill carrying either a short label or a symbol.
+/// A pill carrying a short label.
 private final class BadgeView: NSView {
     private let label = NSTextField(labelWithString: "")
-    private let symbolView = NSImageView()
 
     init(badge: ListRowBadge) {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 4
+        layer?.backgroundColor = badge.color.withAlphaComponent(0.16).cgColor
         translatesAutoresizingMaskIntoConstraints = false
         setContentCompressionResistancePriority(.required, for: .horizontal)
         setContentHuggingPriority(.required, for: .horizontal)
 
-        switch badge {
-        case .text(let string, let tone):
-            addSubview(label)
-            label.translatesAutoresizingMaskIntoConstraints = false
-            label.stringValue = string
-            label.font = .systemFont(ofSize: 10, weight: .semibold)
-            label.textColor = tone.foregroundColor
-            layer?.backgroundColor = tone.backgroundColor.cgColor
-            NSLayoutConstraint.activate([
-                label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 5),
-                trailingAnchor.constraint(equalTo: label.trailingAnchor, constant: 5),
-                label.topAnchor.constraint(equalTo: topAnchor, constant: 1.5),
-                bottomAnchor.constraint(equalTo: label.bottomAnchor, constant: 1.5),
-            ])
-
-        case .symbol(let name, let tone):
-            addSubview(symbolView)
-            symbolView.translatesAutoresizingMaskIntoConstraints = false
-            symbolView.image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
-            symbolView.contentTintColor = tone.foregroundColor
-            symbolView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
-            layer?.backgroundColor = tone.backgroundColor.cgColor
-            NSLayoutConstraint.activate([
-                symbolView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-                trailingAnchor.constraint(equalTo: symbolView.trailingAnchor, constant: 4),
-                symbolView.topAnchor.constraint(equalTo: topAnchor, constant: 2),
-                bottomAnchor.constraint(equalTo: symbolView.bottomAnchor, constant: 2),
-            ])
-        }
+        addSubview(label)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.stringValue = badge.text
+        label.font = .systemFont(ofSize: 10, weight: .semibold)
+        label.textColor = badge.color
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 5),
+            trailingAnchor.constraint(equalTo: label.trailingAnchor, constant: 5),
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 1.5),
+            bottomAnchor.constraint(equalTo: label.bottomAnchor, constant: 1.5),
+        ])
     }
 
     @available(*, unavailable)
@@ -185,12 +166,20 @@ final class ListRowTableCellView: TableCellView {
         badgeStackView.orientation = .horizontal
         badgeStackView.spacing = 4
         badgeStackView.alignment = .centerY
+        // Hidden up front, not just when badges are cleared: `badges` starts empty, so
+        // assigning an empty array is a no-op that never reaches `rebuildBadges`. Left
+        // visible, an empty stack view has no way to derive its height, which AppKit
+        // reports as ambiguous layout once per badge-less row.
+        badgeStackView.isHidden = true
         badgeStackView.setContentCompressionResistancePriority(.required, for: .horizontal)
         badgeStackView.setContentHuggingPriority(.required, for: .horizontal)
 
         titleRowStackView.orientation = .horizontal
         titleRowStackView.spacing = 6
         titleRowStackView.alignment = .centerY
+        // No trailing spacer is needed: a gravity-areas stack does not stretch its
+        // arranged subviews, so the title and badge stay packed at the leading edge even
+        // though the row itself spans the full width.
         titleRowStackView.addArrangedSubview(titleLabel)
         titleRowStackView.addArrangedSubview(badgeStackView)
 
@@ -220,13 +209,17 @@ final class ListRowTableCellView: TableCellView {
             iconImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
 
             textLeadingToIcon,
-            textStackView.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            // Pinned, not bounded: an upper bound alone lets the stack shrink to its
+            // intrinsic width, and the labels -- deliberately low on compression
+            // resistance so they truncate rather than push the row wider -- collapse to
+            // an ellipsis even when the row is 1500pt across.
+            textStackView.trailingAnchor.constraint(equalTo: trailingAnchor),
             textStackView.centerYAnchor.constraint(equalTo: centerYAnchor),
             textStackView.topAnchor.constraint(greaterThanOrEqualTo: topAnchor),
             bottomAnchor.constraint(greaterThanOrEqualTo: textStackView.bottomAnchor),
 
-            titleRowStackView.widthAnchor.constraint(lessThanOrEqualTo: textStackView.widthAnchor),
-            subtitleLabel.widthAnchor.constraint(lessThanOrEqualTo: textStackView.widthAnchor),
+            titleRowStackView.widthAnchor.constraint(equalTo: textStackView.widthAnchor),
+            subtitleLabel.widthAnchor.constraint(equalTo: textStackView.widthAnchor),
         ])
     }
 
