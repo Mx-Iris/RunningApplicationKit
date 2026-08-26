@@ -114,11 +114,13 @@ public final class RunningPickerTabViewController: NSViewController {
             set { explicitIconSize = newValue }
         }
 
-        /// 34pt in the list style: every running application resolves to its own distinct icon, so a larger icon genuinely aids recognition.
+        /// Both tabs use one list icon size so the two do not look like different
+        /// components when switched between. 28pt leaves 8pt of breathing room above and
+        /// below in a 44pt list row.
         private var defaultIconSize: CGFloat {
             switch style {
             case .table: 20
-            case .list: 34
+            case .list: 28
             }
         }
 
@@ -301,11 +303,13 @@ public final class RunningPickerTabViewController: NSViewController {
             set { explicitIconSize = newValue }
         }
 
-        /// 22pt in the list style: measured on the development machine, 400 processes resolve to just 2 distinct icons, so a larger icon would only magnify the repetition.
+        /// Matches ``ApplicationConfiguration`` so the two tabs stay visually consistent.
+        /// Process icons carry far less information — 400 processes resolve to just two
+        /// distinct icons — but a size that changes between tabs reads as a bug.
         private var defaultIconSize: CGFloat {
             switch style {
             case .table: 20
-            case .list: 22
+            case .list: 28
             }
         }
 
