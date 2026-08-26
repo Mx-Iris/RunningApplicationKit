@@ -67,7 +67,7 @@ struct PickerStructureTests {
         let (tablePicker, tableWindow) = Self.loadedPicker(style: .table)
         #expect(tablePicker.tableView.tableColumns.count > 1)
         #expect(tablePicker.tableView.headerView != nil)
-        #expect(tablePicker.tableView.rowHeight == 25)
+        #expect(tablePicker.tableView.rowHeight == 28)
         withExtendedLifetime((listWindow, tableWindow)) {}
     }
 
@@ -177,7 +177,7 @@ struct PickerStructureTests {
         Self.relayout(picker, in: window)
         #expect(picker.tableView.tableColumns.count == originalColumnCount)
         #expect(picker.tableView.headerView != nil)
-        #expect(picker.tableView.rowHeight == 25)
+        #expect(picker.tableView.rowHeight == 28)
         #expect(picker.sortControl.isHidden == true)
     }
 

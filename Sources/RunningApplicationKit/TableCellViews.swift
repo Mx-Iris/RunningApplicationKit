@@ -79,11 +79,58 @@ class NameTableCellView: LabelTableCellView {}
 
 class BundleIdentifierTableCellView: LabelTableCellView {}
 
-class PIDTableCellView: LabelTableCellView {}
+/// PID is an identifier, not a classification, so it gets no badge — a pill would imply
+/// the number groups rows the way a platform or architecture does. Monospaced digits line
+/// up down the column instead, in a receded colour.
+class PIDTableCellView: LabelTableCellView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        labelFont = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        labelColor = .secondaryLabelColor
+    }
+}
 
-class ArchitectureTableCellView: LabelTableCellView {}
+/// Renders one badge, for the table columns that carry a classification rather than
+/// free text. Distinct subclasses per column so `NSTableView` can reuse by class identity.
+class BadgeTableCellView: TableCellView {
+    var badge: ListRowBadge? {
+        didSet {
+            guard badge != oldValue else { return }
+            apply()
+        }
+    }
 
-class PlatformTableCellView: LabelTableCellView {}
+    private var badgeView: BadgeView?
+
+    private func apply() {
+        guard let badge else {
+            badgeView?.isHidden = true
+            return
+        }
+        if let badgeView {
+            badgeView.isHidden = false
+            badgeView.configure(with: badge)
+            return
+        }
+        let view = BadgeView(badge: badge)
+        addSubview(view)
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: leadingAnchor),
+            view.centerYAnchor.constraint(equalTo: centerYAnchor),
+            view.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+        ])
+        badgeView = view
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        badge = nil
+    }
+}
+
+class ArchitectureTableCellView: BadgeTableCellView {}
+
+class PlatformTableCellView: BadgeTableCellView {}
 
 class ExecutablePathTableCellView: LabelTableCellView {}
 
@@ -93,6 +140,16 @@ class LabelTableCellView: TableCellView {
             label.stringValue = string ?? ""
             toolTip = label.stringValue
         }
+    }
+
+    var labelFont: NSFont {
+        get { label.font ?? .systemFont(ofSize: 12) }
+        set { label.font = newValue }
+    }
+
+    var labelColor: NSColor {
+        get { label.textColor ?? .labelColor }
+        set { label.textColor = newValue }
     }
 
     private let label = NSTextField(labelWithString: "")

@@ -22,7 +22,8 @@ extension RunningPickerTabViewController.Style {
     /// subtitle and needs the extra height; a table row holds a single line of text.
     var defaultRowHeight: CGFloat {
         switch self {
-        case .table: 25
+        // 28 rather than 25: the table's badges are pills, and 25pt leaves them cramped.
+        case .table: 28
         case .list: 44
         }
     }

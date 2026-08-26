@@ -22,7 +22,7 @@ struct ConfigurationTests {
     }
 
     @Test("Row height follows the style when it was never set", arguments: [
-        (RunningPickerTabViewController.Style.table, CGFloat(25)),
+        (RunningPickerTabViewController.Style.table, CGFloat(28)),
         (.list, CGFloat(44)),
     ])
     func rowHeightFollowsStyle(style: RunningPickerTabViewController.Style, expected: CGFloat) {
@@ -52,7 +52,7 @@ struct ConfigurationTests {
     @Test("An unset value follows the style when the style is changed afterwards")
     func unsetValuesFollowALaterStyleChange() {
         var configuration = ProcessConfiguration(style: .table)
-        #expect(configuration.rowHeight == 25)
+        #expect(configuration.rowHeight == 28)
         configuration.style = .list
         #expect(configuration.rowHeight == 44)
         #expect(configuration.iconSize == 28)
@@ -139,10 +139,14 @@ struct ConfigurationTests {
         #expect(configuration.allowsFields == [.icon, .name])
         #expect(configuration.allowsColumns == [.icon, .name])
 
-        // The deprecated initializer must still land on the table style.
+        // The deprecated initializer must still land on the table style, and must keep
+        // handing over the row height it always did -- the style default moved to 28 for
+        // the sake of the new badges, but a caller on the old spelling should see no
+        // change at all.
         let viaOldInitializer = ProcessConfiguration(allowsColumns: [.name, .pid])
         #expect(viaOldInitializer.allowsFields == [.name, .pid])
         #expect(viaOldInitializer.style == .table)
         #expect(viaOldInitializer.rowHeight == 25)
+        #expect(ProcessConfiguration(style: .table).rowHeight == 28)
     }
 }

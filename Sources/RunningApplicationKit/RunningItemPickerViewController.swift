@@ -702,13 +702,16 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
             }
         case "architecture":
             return tableView.makeView(ofClass: ArchitectureTableCellView.self) {
-                $0.string = item.architecture?.description
+                $0.badge = item.architecture.map { .init(text: $0.description, color: $0.badgeColor) }
             }
         case "platform":
             return tableView.makeView(ofClass: PlatformTableCellView.self) {
-                // Left blank when undetermined, matching how the Arch column reads; an
-                // unrecognized constant still renders as "Platform <n>".
-                $0.string = item.platform?.description
+                // Unlike the list style, the table prints a value in every row -- a column
+                // of blanks reads as broken. The host platform is pushed into a receded
+                // colour instead of being omitted, so anything else still stands out.
+                $0.badge = item.platform.map {
+                    .init(text: $0.description, color: $0 == .macOS ? .secondaryLabelColor : $0.badgeColor)
+                }
             }
         default:
             return nil
