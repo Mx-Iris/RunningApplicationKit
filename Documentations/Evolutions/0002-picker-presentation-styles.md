@@ -429,3 +429,10 @@ final class SortControl: NSPopUpButton { }
 | 2026-08-25 | 收尾判断二：登记新术语 | 判定**需要**。`field` 与 `column` 的分野是这次改名的全部理由，`style` 则容易与 `NSTableView.style` 混淆，两条均已登记进项目术语表。无需登记全局术语。 |
 | 2026-08-25 | 实现与提案的三处差异 | 骨架屏改用复合 cell（协调器按列标识符查表，列表只有一个真实列）；搜索框在列表样式下移到自己一行；新增 `setStyle(_:)` 便捷方法。逐条记在实现说明的「与提案的差异」一节，提案正文保持原貌。 |
 | 2026-08-26 | 分配编号 0002 | 落地 commit 中取号：fetch 全部共享分支后，已编号提案的全局最大值为 0001，故取 0002，由 `draft-picker-presentation-styles.md` 改名而来。 |
+| 2026-08-26 | 修复列表行的布局 bug | 行的文字列用 `lessThanOrEqualTo` 约束到 trailing 边而非钉住，收缩到固有宽度后，两个低抗压缩优先级的 label 在上千点宽的行里被压成六个字符加省略号。改为钉住，并把内层两行的宽度从上界改为等于。补了 `ListRowLayoutTests` —— 套件里唯一走出纯函数的一组，因为这类问题纯函数测不到。变异验证：改回原写法三个测试立刻变红。 |
+| 2026-08-26 | 推翻本提案的按页图标尺寸决定 | 提案依据实测让应用页 34pt、进程页 22pt。实际跑起来在两页间切换时尺寸跳变，读起来像渲染 bug。统一为 28pt。原推理优化的是单页可读性，代价是跨页一致性 —— 后者更显眼。差异记在实现说明，提案正文保持原貌。 |
+| 2026-08-26 | 删除一处无作用的代码 | `titleRowStackView` 里为吸收剩余宽度而加的 spacer 实测完全无效 —— `NSStackView` 默认的 `.gravityAreas` 本就不拉伸 arranged subview，有无 spacer 时徽章位置逐点相同。由变异测试（去掉它测试不变红）暴露，已删除。 |
+| 2026-08-26 | 再修两个只在真机现形的 bug | 其一：初始化时设 `.list` 完全不生效 —— 基类建列跑在子类应用配置之前，建列时 style 还是默认值；只有运行时切换那条路是对的。改为基类向子类拉取配置（`currentBaseConfiguration()`）。其二：列表那一列停在 `NSTableColumn` 默认的 100pt —— `autoresizingMask` 只在表格 frame 变化时重分配，切换样式时窗口没动，永不触发。建列时显式给宽度并在 `viewDidLayout` 里 `sizeLastColumnToFit()`。 |
+| 2026-08-26 | 修布局歧义：空徽章容器一直可见 | `badgeStackView.isHidden` 只在 `badges` 的 `didSet` 里设，而初值就是 `[]`，赋 `[]` 被 guard 挡掉，从未执行。可见且无 arranged subview 的 `NSStackView` 推算不出高度，AppKit 每个无徽章的行报一条歧义 —— 与用户截图里的 10 条一一对应。init 里直接隐藏。 |
+| 2026-08-26 | 新增 `PickerStructureTests`，并修正测试方法论 | 四个 bug 连续绕过纯函数测试，故把结构检查固化下来。过程中学到两条：行必须用**约束**定尺寸而非设 frame、picker 必须装在**真实 window** 里 —— 否则 AppKit 顺手做的 autoresizing 会盖住故障。以及列宽那条断言最初写成「列宽 ≈ 表格宽」，改回 bug 后仍然是绿的；换成「建列后、layout 前，宽度不是默认的 100」才咬得住。测最终效果易被间接行为糊弄，测代码本身做了什么才可靠。 |
+| 2026-08-26 | 徽章改版：沙盒锁改文字、平台按家族着色 | 用户反馈两点：绿色锁形图标不如文字直接；Mac Catalyst 与 DriverKit 都用 `secondaryLabelColor`，深色下糊成一片灰。改为沙盒徽章显示 `Sandboxed`、平台徽章一个 OS 家族一个色（iOS 蓝 / tvOS 紫 / watchOS 粉 / visionOS 靛 / Catalyst 青 / DriverKit 棕）。模拟器与真机共用家族色、靠文字区分 —— 颜色回答「哪个平台」，拆开就不回答了。`ListRowBadge` 随之从两个 case 的枚举简化为 `struct { text, color }`。 |

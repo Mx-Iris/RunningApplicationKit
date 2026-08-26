@@ -11,10 +11,20 @@ swift package update && swift build 2>&1 | xcsift
 swift test 2>&1 | xcsift
 ```
 
-Tests cover the pure Mach-O parsing logic only (`Tests/RunningApplicationKitTests/`): byte
-order, fat slice selection, and load command bounds, all driven by hand-built in-memory
-fixtures so they do not depend on what the test machine has installed. Process enumeration
-and the UI have no tests.
+Tests (`Tests/RunningApplicationKitTests/`) are deterministic and environment-independent —
+nothing reads a real process, a real binary, or anything about the machine running them:
+
+- Mach-O parsing: byte order, fat slice selection, load command bounds, driven by
+  hand-built byte arrays.
+- Configuration: style defaults, explicit overrides, and what reaches `BaseConfiguration`.
+- List row layout and picker structure: the two places outside pure functions. Four
+  layout/wiring bugs reached screenshots while compiling cleanly and passing every other
+  test — a style ignored at initialisation, a table column stuck at its 100pt default, a
+  text column that collapsed instead of filling the row, and an empty stack view left
+  visible. Rows are sized by constraints and pickers are hosted in a real `NSWindow`,
+  because frame-assigned views pick up autoresizing that hides exactly these faults.
+
+Process enumeration and the picker's higher-level behaviour have no tests.
 
 **xcsift reports failing swift-testing tests as a success** — judge test outcomes by the raw
 exit code of `swift test`, never by the xcsift summary.

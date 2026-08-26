@@ -59,6 +59,34 @@ public init(
 **下次维护若有人"顺手"给它补一个默认值，所有无参构造会立刻编译失败。** 代码里有注释，这里再记
 一次。
 
+### 三个只在真机上现形的 bug
+
+它们全部通过编译、通过当时的全部测试，然后出现在用户的截图里。共同点是**都不在类型系统的
+射程内，也不在纯函数的射程内**。
+
+**1. 初始化时设 `.list` 完全不生效。** 基类 `viewDidLoad` 里 `configureColumns()` 跑在子类
+`applyBaseConfiguration(...)` **之前** —— 建列时 `presentationStyle` 还是默认的 `.table`。
+只有运行时切换那条路是对的。修法是把配置从「子类推给基类」改成「基类向子类拉取」：
+
+```swift
+// 基类 viewDidLoad
+applyBaseConfiguration(currentBaseConfiguration())   // 先落配置
+configureColumns()                                    // 再按 style 建列
+```
+
+子类改为覆盖 `currentBaseConfiguration()`，不再自己调 `applyBaseConfiguration`。
+
+**2. 列表的那一列宽 100pt。** `NSTableColumn` 的默认宽度就是 100，而我建列时没设过。
+`resizingMask = .autoresizingMask` 只在**表格 frame 变化时**重新分配宽度 —— 切换样式时窗口
+尺寸没动，于是永远不触发。结果是每行只有 100pt 可用，标题和副标题都被压成六个字符加省略号。
+修法是建列时显式给宽度，并在 `viewDidLayout` 里 `sizeLastColumnToFit()`。
+
+**3. 空的徽章容器一直可见。** `badgeStackView.isHidden` 只在 `badges` 的 `didSet` 里设置，
+而 `badges` 初值就是 `[]` —— 赋 `[]` 被 `guard badges != oldValue` 挡掉，`rebuildBadges()`
+从未执行。一个可见且没有 arranged subview 的 `NSStackView` 没有任何依据推算高度，AppKit 因此
+每个无徽章的行报一次「Height and vertical position are ambiguous」。Applications 页整页都没有
+徽章，于是 10 行报 10 条。修法是 init 里直接 `isHidden = true`。
+
 ### 骨架屏：一个复合 cell，而不是两个列 cell
 
 提案写的是「把两条文字条当两列解释」。落地时发现**不能真的当两列** ——
@@ -87,6 +115,20 @@ public init(
 
 **徽章只在有信息时渲染**：平台是 `macOS` 不渲染，非沙盒不渲染。这是整个样式存在的理由 ——
 表格列必须在每一行印一个值，徽章不必。
+
+**配色一个系统家族一个色**（`Platform.badgeColor`，定义在 UI 层而非 `Platform.swift`，
+它是呈现关注点）：iOS 系蓝、tvOS 系紫、watchOS 系粉、visionOS 系靛、Mac Catalyst 青、
+DriverKit 棕、判不出橙、Sandboxed 绿。
+
+**模拟器与真机同色**，靠文字区分 —— 颜色回答的是「这是哪个平台」，若 iOS 与 iOS Simulator
+不同色，颜色就不再回答这个问题了。
+
+初版所有非模拟器平台统一用 `secondaryLabelColor`，结果 Mac Catalyst 和 DriverKit 在深色下
+糊成一片灰。`badgeColor` 的 switch **刻意不写 `default`** —— 新增平台必须在此处指定颜色，
+不能静默继承别人的。
+
+沙盒徽章原本是一枚绿色锁形 SF Symbol，改成文字 `Sandboxed`；`ListRowBadge` 因此从带两个 case
+的枚举简化为 `struct { text, color }`，`BadgeView` 的 symbol 分支一并删除。
 
 ## 模块结构
 
@@ -125,6 +167,7 @@ dataSource cell provider
 | 骨架屏是**复合 cell**，不是两个列 cell | 提案设想把两条文字条当两列喂进现有模型。实际不行：协调器按列标识符查表，列表只有一个真实列。改为复合 cell，但两条文字条仍按 columnIndex 0/1 读外观参数，因此「不新增公开 API」的目标不变。 |
 | 搜索框在列表样式下移到自己一行 | 提案只说「搜索框右侧放排序下拉」。落地时按预览的样子做成两行：标题行照旧，下面一行是占满宽度的搜索框 + 排序下拉。表格样式仍是标题行右侧的 300pt 搜索框。 |
 | 新增 `setStyle(_:)` 便捷方法 | 提案只定了 per-tab 的 `style`。实际加了 `applicationStyle` / `processStyle` 两个属性外加一个同时设置两者的 `setStyle(_:)`，Example 的切换器用它。 |
+| **图标尺寸两个标签页统一**，不再按页取不同默认值 | 提案依据实测（应用页 21/21 独立图标、进程页 400 个只有 2 种）让两页取 34pt 与 22pt。**跑起来看到实际效果后推翻**：在两页之间切换时尺寸跳变，读起来像渲染 bug，而不像有意的信息设计。统一为 28pt —— 44pt 行高里上下各留 8pt。原来的推理本身没错，只是它优化的是单页可读性，代价是跨页一致性，而后者更显眼。 |
 
 ## 验证
 
@@ -140,8 +183,33 @@ dataSource cell provider
 排序菜单内容（不含 icon 那个空标题项）、以及切回表格后一切复原。**这条验证抓出了上面那个
 漏传 bug** —— 单看编译和单元测试都发现不了。
 
-**未做**：交互式 UI 验证。列表行的实际观感、徽章配色在深浅色下的表现、骨架屏动画，都需要人
-运行 Example 用眼睛看。Example 里已经加好了 Table / List 切换器。
+**布局与结构测试**：`ListRowLayoutTests.swift` 与 `PickerStructureTests.swift`。这两组是套件里
+唯一走出纯函数的地方，理由很实在：上面那三个 bug 加上文字列的约束问题，**没有一个是纯函数测得到的**。
+
+- `ListRowLayoutTests` —— 单个行的内部布局：文字列是否铺到行的右边缘、长标题是否被无谓截断、
+  徽章是否紧跟标题、隐藏图标后文字是否收回那块空间、空徽章容器是否隐藏、以及整行有无布局歧义。
+  **行是用约束定尺寸的，不是设 frame** —— 设 frame 会带来 autoresizing 约束，把真实表格里会暴露
+  的歧义掩盖掉。
+- `PickerStructureTests` —— 加载完成后的整体结构：初始化时的 style 是否真的生效、列表是否只有一列、
+  表头与排序控件的显隐、排序菜单内容、列宽、以及运行时切换后这一切是否复原。
+  **picker 装在真实 `NSWindow` 里**，理由同上：给游离的 view 赋 frame 会让 AppKit 顺手 autoresize
+  列，正好盖住「列停在默认宽度」这个 bug。
+
+这些测试仍然是确定性的、不依赖环境的：不读真实进程、真实图标，也不读跑测试的机器的任何信息。
+
+**变异验证**（一次性）：三个 bug 逐个改回原样，测试逐个变红。
+
+其中列宽那条有个教训值得记：最初的断言是「列宽 ≈ 表格宽度」，**改回 bug 后它居然还是绿的** ——
+因为测试里的那次 layout 恰好触发了 autoresizing，把列撑开了，掩盖了「代码根本没设宽度」这件事。
+换成断言「建列之后、任何 layout 之前，宽度不是默认的 100」才咬得住。**测最终效果容易被间接行为
+糊弄，测代码本身做了什么才可靠。**
+
+同一轮变异还发现 `titleRowStackView` 里那个用来吸收剩余宽度的 spacer **完全没有作用** ——
+`NSStackView` 默认的 `.gravityAreas` 本来就不拉伸 arranged subview。实测有无 spacer 时徽章位置
+逐点相同，已删除。
+
+**未做**：交互式 UI 验证。徽章配色在深浅色下的表现、骨架屏动画，仍需人运行 Example 用眼睛看。
+Example 里已经加好了 Table / List 切换器。
 
 ## 已知降级
 
