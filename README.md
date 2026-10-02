@@ -73,6 +73,47 @@ let picker = RunningPickerTabViewController(
 )
 ```
 
+### Supplying the Process List Yourself
+
+By default the Processes list is this machine's process table. Hand the picker a
+`RunningItemSource` and it shows your list instead — which is how you offer the processes of
+somewhere this library cannot see, such as another machine:
+
+```swift
+let picker = RunningPickerTabViewController(
+    // One tab: the tab bar disappears and the list is hosted directly. Offering this
+    // machine's applications beside another machine's processes would invite picking from
+    // the wrong one.
+    configuration: .init(tabs: [.processes]),
+    processItemSource: AnyRunningItemSource {
+        try await client.processes().map {
+            RunningProcess(
+                processIdentifier: $0.processIdentifier,
+                name: $0.name,
+                executablePath: $0.executablePath,
+                platform: .iOS
+            )
+        }
+    }
+)
+```
+
+A supplied source is fetched **once**, when the picker appears — `loadItems()` may be a round
+trip, so repeating it on a timer is not assumed to be free. Call `reloadProcesses()` when you
+want it again. A fetch that throws reaches
+`runningPickerTabViewController(_:didFailToLoadProcesses:)` and leaves the list empty, so a
+failure is distinguishable from a machine with nothing to list.
+
+### Rows That Are Shown but Cannot Be Picked
+
+Returning `false` from `runningPickerTabViewController(_:shouldSelectProcess:)` both refuses
+the selection and dims the row, so "not available" is visible rather than only discovered on
+click. Use it for targets you can list but not act on.
+
+`kernel_task` (pid 0) and `launchd` (pid 1) are refused this way without being asked about:
+nothing can usefully attach to either. They stay in the list — hiding them would make their
+absence unexplainable.
+
 ### Presentation Styles
 
 Each tab presents its items as either a multi-column `.table` (the default) or a `.list` of

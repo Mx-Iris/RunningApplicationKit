@@ -24,7 +24,12 @@ nothing reads a real process, a real binary, or anything about the machine runni
   visible. Rows are sized by constraints and pickers are hosted in a real `NSWindow`,
   because frame-assigned views pick up autoresizing that hides exactly these faults.
 
-Process enumeration and the picker's higher-level behaviour have no tests.
+- Supplied item source: the list comes from the caller and never from this machine, reload
+  re-fetches, a failed or empty answer clears the skeleton, and the shown-but-not-selectable
+  rules. A test double supplies the rows, which is what makes a one-row list — `launchd` and
+  nothing else — expressible at all; the local process table never could be.
+
+Local process enumeration and the picker's higher-level behaviour have no tests.
 
 **xcsift reports failing swift-testing tests as a success** — judge test outcomes by the raw
 exit code of `swift test`, never by the xcsift summary.
@@ -42,7 +47,24 @@ RunningApplicationKit provides data models, observers, and picker UI for macOS r
 
 ### Public API Boundary
 
-Only `RunningPickerTabViewController` (and its configuration/delegate/column types), `RunningApplication`, `RunningProcess`, `RunningProcessEnumerator`, `RunningItem`, `Architecture`, and the two observer actors are `public`. The individual picker view controllers (`RunningApplicationPickerViewController`, `RunningProcessPickerViewController`) and the base class `RunningItemPickerViewController` are `internal` — consumers interact through the tab VC.
+Only `RunningPickerTabViewController` (and its configuration/delegate/column/tab types), `RunningApplication`, `RunningProcess`, `RunningProcessEnumerator`, `RunningItem`, `RunningItemSource` / `AnyRunningItemSource`, `RestrictedProcess`, `Architecture`, and the two observer actors are `public`. The individual picker view controllers (`RunningApplicationPickerViewController`, `RunningProcessPickerViewController`) and the base class `RunningItemPickerViewController` are `internal` — consumers interact through the tab VC.
+
+**Keep them internal.** Making a picker public was tried while adding the supplied-source feature and withdrawn: Swift requires every `override` in a public class to be public too, which would have published the forty-odd subclass hooks, `BaseConfiguration` and `PickerField` — and worse, made `didConfirm(item:)` and `loadItems()` *callable* from outside, firing delegate callbacks behind the picker's back. Anything a consumer needs goes on the tab VC. See `Documentations/Evolutions/draft-injected-item-source.md`.
+
+### Supplying the list
+
+`RunningPickerTabViewController(processItemSource:)` fills the Processes list from the caller instead of from this machine, and `Configuration.tabs` picks which lists to show — a single entry drops the tab bar and hosts that list directly. Two deliberate differences from the local list, both in `RunningProcessPickerViewController`:
+
+- **No polling.** `loadItems()` may be a round trip to another machine, so it runs once when the picker appears; re-fetching is `reloadProcesses()`, on the caller's schedule. A tab that is not configured is never prefetched, for the same reason.
+- **An empty or failed answer clears the skeleton explicitly.** The base class only hides placeholders on the first *non-empty* batch, so without that the rows would pulse forever. A failure also reaches `didFailToLoadProcesses` — otherwise a failed fetch and a machine with nothing to list are the same empty table.
+
+`RunningItemSource` has a primary associated type but the pickers store `AnyRunningItemSource` rather than `any RunningItemSource<Item>`: the runtime support for a parameterised existential starts at macOS 13 and this library deploys to 11.
+
+### Shown but not selectable
+
+`RunningItemPickerViewController.isSelectable(_:)` is the single answer behind both halves: `tableView(_:shouldSelectRow:)` refuses the row, and `tableView(_:didAdd:forRow:)` drops its `alphaValue` to `unselectableRowOpacity`. Before that second half existed, `shouldSelect(item:)` returning `false` left the row looking perfectly pickable, so the refusal read as the list being broken. It is done per row view, not in the cell-building closure, which runs once per *column* in the table style.
+
+`RestrictedProcess` — pid 0 and pid 1 — is refused ahead of the delegate, unconditionally and by identifier rather than by name.
 
 ### Concurrency Model
 

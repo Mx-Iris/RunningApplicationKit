@@ -45,7 +45,22 @@ struct BaseConfiguration {
     }
 }
 
+/// The shared machinery behind every picker: search field, diffable data source, column
+/// sorting, context menus, the two presentation styles, and the confirm/cancel chrome.
+///
+/// Internal on purpose, like the concrete pickers under it. Consumers reach a picker
+/// through ``RunningPickerTabViewController``, which keeps the forty-odd subclass hooks
+/// out of the public API — and, just as importantly, keeps them uncallable: a public
+/// `didConfirm(item:)` or `loadItems()` would be meaningless to an outside caller and
+/// would fire delegate callbacks behind the picker's back.
 class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTableViewDelegate, NSMenuDelegate {
+    /// How much of its opacity a row loses when it cannot be selected.
+    ///
+    /// Refusing selection in `shouldSelectRow` leaves the row looking exactly like a
+    /// selectable one, so the refusal reads as the list being broken. AppKit's own
+    /// disabled-control treatment is the model here.
+    static var unselectableRowOpacity: CGFloat { 0.4 }
+
     private enum Section: CaseIterable {
         case main
     }
@@ -298,6 +313,10 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
     }
 
     // MARK: - Data
+
+    /// The items currently backing the table, for tests. Asserting on the table's row
+    /// count alone cannot tell "the supplied list" from "a list of the same size".
+    var itemsForTesting: [Item] { cachedItems }
 
     func reloadData() {
         cachedItems = loadItems()
@@ -837,7 +856,28 @@ class RunningItemPickerViewController<Item: RunningItem>: NSViewController, NSTa
 
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
         guard let item = dataSource.itemIdentifier(forRow: row) else { return true }
+        return isSelectable(item)
+    }
+
+    /// Whether a row may be picked, by this library's own rules and then the subclass's.
+    ///
+    /// Both halves of "shown but not selectable" read this: the selection refusal below
+    /// and the dimming in ``tableView(_:didAdd:forRow:)``. Keeping them on one answer is
+    /// what stops a row from looking pickable and then refusing, or the reverse.
+    func isSelectable(_ item: Item) -> Bool {
+        guard !RestrictedProcess.isRestricted(processIdentifier: item.processIdentifier) else { return false }
         return shouldSelect(item: item)
+    }
+
+    /// Dims a row that cannot be picked.
+    ///
+    /// Done per row view rather than inside the cell-building closure, which runs once per
+    /// *column* in the table style and would therefore ask `shouldSelect(item:)` — usually
+    /// a delegate call-out — six times a row. Row views are recycled, so the opacity is
+    /// assigned unconditionally rather than only in the unselectable case.
+    func tableView(_ tableView: NSTableView, didAdd rowView: NSTableRowView, forRow row: Int) {
+        guard let item = dataSource.itemIdentifier(forRow: row) else { return }
+        rowView.alphaValue = isSelectable(item) ? 1 : Self.unselectableRowOpacity
     }
 
     func tableView(_ tableView: NSTableView, typeSelectStringFor tableColumn: NSTableColumn?, row: Int) -> String? {

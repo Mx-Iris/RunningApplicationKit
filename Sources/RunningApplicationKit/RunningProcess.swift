@@ -11,7 +11,11 @@ public struct RunningProcess: RunningItem {
     public let isSandboxed: Bool
     public let platform: Platform?
 
-    init(
+    /// Public so a caller can describe a process this library has no way to enumerate —
+    /// one running on another machine, reached through a ``RunningItemSource``. There is
+    /// deliberately no separate model type for that case: this one is plain data, and a
+    /// process is a process wherever it runs.
+    public init(
         processIdentifier: pid_t,
         name: String,
         executablePath: String? = nil,

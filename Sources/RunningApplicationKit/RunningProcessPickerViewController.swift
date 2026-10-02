@@ -1,5 +1,11 @@
 import AppKit
 
+/// Picks one process out of a list.
+///
+/// By default the list is this machine's process table, refreshed incrementally. Give it
+/// a ``RunningItemSource`` instead and it shows whatever that source hands over — which
+/// is how ``RunningPickerTabViewController`` offers the processes of a machine this
+/// library cannot see.
 final class RunningProcessPickerViewController: RunningItemPickerViewController<RunningProcess> {
     typealias Column = RunningPickerTabViewController.ProcessField
     typealias Configuration = RunningPickerTabViewController.ProcessConfiguration
@@ -9,18 +15,44 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
         func runningProcessPickerViewController(_ viewController: RunningProcessPickerViewController, didSelectProcess process: RunningProcess)
         func runningProcessPickerViewController(_ viewController: RunningProcessPickerViewController, didConfirmProcess process: RunningProcess)
         func runningProcessPickerViewControllerWasCancelled(_ viewController: RunningProcessPickerViewController)
+        /// Only ever called for a picker built with an ``RunningItemSource``; local
+        /// enumeration has nothing to fail at.
+        func runningProcessPickerViewController(_ viewController: RunningProcessPickerViewController, didFailToLoadProcesses error: any Error)
     }
 
     weak var delegate: Delegate?
 
     private(set) var configuration: Configuration
 
+    /// Supplied by the caller, in which case this picker never touches the local process
+    /// table. `nil` is the original behaviour, not a degraded one.
+    private let itemSource: AnyRunningItemSource<RunningProcess>?
+
     private var refreshTimer: Timer?
     private var processCache: [pid_t: RunningProcess] = [:]
     private let backgroundQueue = DispatchQueue(label: "com.runningapplicationkit.process-picker", qos: .userInitiated)
+    private var sourceLoadTask: Task<Void, Never>?
+    private var hasLoadedFromSource = false
 
+    /// Lists the processes of the machine this code is running on.
     init(configuration: Configuration = .init()) {
         self.configuration = configuration
+        self.itemSource = nil
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    /// Lists whatever `itemSource` supplies, and nothing of this machine.
+    ///
+    /// Unlike the local list, this one does **not** poll: `loadItems()` may be a round
+    /// trip to another machine, and repeating it on the local refresh interval would spend
+    /// that round trip every couple of seconds for a list that rarely changes. It loads
+    /// once when the picker appears; re-fetching is ``reload()``, on the caller's schedule.
+    init(
+        itemSource: AnyRunningItemSource<RunningProcess>,
+        configuration: Configuration = .init(),
+    ) {
+        self.configuration = configuration
+        self.itemSource = itemSource
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -41,12 +73,26 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
     override func viewWillDisappear() {
         super.viewWillDisappear()
         stopRefreshTimer()
+        sourceLoadTask?.cancel()
+        sourceLoadTask = nil
     }
 
     override func viewDidAppear() {
         super.viewDidAppear()
+        guard itemSource == nil else {
+            loadFromSourceIfNeeded()
+            return
+        }
         startRefreshTimer()
         refreshInBackground()
+    }
+
+    /// Fetches the supplied source again. Does nothing for a local picker, which keeps
+    /// itself current.
+    func reload() {
+        guard itemSource != nil else { return }
+        hasLoadedFromSource = false
+        loadFromSourceIfNeeded()
     }
 
     /// Switch this tab between the table and list presentations at runtime.
@@ -143,6 +189,47 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
         delegate?.runningProcessPickerViewController(self, shouldSelectProcess: item) ?? true
     }
 
+    // MARK: - Supplied Items
+
+    /// The in-flight fetch, for tests to await. The load is a task of its own, so there is
+    /// otherwise nothing a caller could wait on.
+    var pendingSourceLoad: Task<Void, Never>? { sourceLoadTask }
+
+    private func loadFromSourceIfNeeded() {
+        guard let itemSource, !hasLoadedFromSource else { return }
+        hasLoadedFromSource = true
+        sourceLoadTask?.cancel()
+        sourceLoadTask = Task { [weak self] in
+            do {
+                let items = try await itemSource.loadItems()
+                guard !Task.isCancelled else { return }
+                self?.apply(suppliedItems: items)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.handleSourceFailure(error)
+            }
+        }
+    }
+
+    private func apply(suppliedItems items: [RunningProcess]) {
+        processCache = Dictionary(items.map { ($0.processIdentifier, $0) }, uniquingKeysWith: { first, _ in first })
+        updateItems(items)
+        // An empty answer is a legitimate one, and the base class only hides the skeleton
+        // when the first batch is non-empty — so without this a device that lists nothing,
+        // or a source that failed, would show placeholder rows forever.
+        if isSkeletonVisible {
+            setSkeletonVisible(false, animated: true)
+        }
+    }
+
+    private func handleSourceFailure(_ error: any Error) {
+        // Not swallowed: a source that failed and a source that is genuinely empty would
+        // otherwise look identical — an empty list with nothing to explain it.
+        hasLoadedFromSource = false
+        apply(suppliedItems: [])
+        delegate?.runningProcessPickerViewController(self, didFailToLoadProcesses: error)
+    }
+
     // MARK: - Timer
 
     private func startRefreshTimer() {
@@ -162,6 +249,7 @@ final class RunningProcessPickerViewController: RunningItemPickerViewController<
     /// Start background process enumeration early, before the view is loaded.
     /// Called by the parent tab view controller so data is ready when the user switches tabs.
     func prefetch() {
+        guard itemSource == nil else { return }
         refreshInBackground()
     }
 
@@ -217,4 +305,5 @@ extension RunningProcessPickerViewController.Delegate {
     func runningProcessPickerViewController(_ viewController: RunningProcessPickerViewController, didSelectProcess process: RunningProcess) {}
     func runningProcessPickerViewController(_ viewController: RunningProcessPickerViewController, didConfirmProcess process: RunningProcess) {}
     func runningProcessPickerViewControllerWasCancelled(_ viewController: RunningProcessPickerViewController) {}
+    func runningProcessPickerViewController(_ viewController: RunningProcessPickerViewController, didFailToLoadProcesses error: any Error) {}
 }

@@ -1,6 +1,14 @@
 import AppKit
 
 public final class RunningPickerTabViewController: NSViewController {
+    // MARK: - Tabs
+
+    /// Which lists the picker offers.
+    public enum Tab: Hashable, Sendable, CaseIterable {
+        case applications
+        case processes
+    }
+
     // MARK: - Configuration
 
     public struct Configuration {
@@ -8,14 +16,25 @@ public final class RunningPickerTabViewController: NSViewController {
         public var applicationTabLabel: String
         public var processTabLabel: String
 
+        /// Which tabs to show, in order.
+        ///
+        /// A single entry drops the tab bar entirely and hosts that list directly — a tab
+        /// control with one tab in it is just a mislabelled title. This is what a caller
+        /// uses when only one of the two lists makes sense: offering the local
+        /// applications beside the processes of *another* machine would invite picking
+        /// from the wrong one.
+        public var tabs: [Tab]
+
         public init(
             contentInsets: NSEdgeInsets = .init(top: 20, left: 20, bottom: 20, right: 20),
             applicationTabLabel: String = "Applications",
-            processTabLabel: String = "Processes"
+            processTabLabel: String = "Processes",
+            tabs: [Tab] = Tab.allCases
         ) {
             self.contentInsets = contentInsets
             self.applicationTabLabel = applicationTabLabel
             self.processTabLabel = processTabLabel
+            self.tabs = tabs.isEmpty ? Tab.allCases : tabs
         }
     }
 
@@ -406,6 +425,12 @@ public final class RunningPickerTabViewController: NSViewController {
         func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didSelectProcess process: RunningProcess)
         func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didConfirmProcess process: RunningProcess)
 
+        /// Only ever called when the Processes list comes from a supplied
+        /// ``RunningItemSource``; enumerating this machine has nothing to fail at. The
+        /// list is left empty, so without handling this a failed fetch and a genuinely
+        /// empty machine look the same on screen.
+        func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didFailToLoadProcesses error: any Error)
+
         func runningPickerTabViewControllerWasCancelled(_ viewController: RunningPickerTabViewController)
     }
 
@@ -419,14 +444,25 @@ public final class RunningPickerTabViewController: NSViewController {
     private let applicationPickerViewController: RunningApplicationPickerViewController
     private let processPickerViewController: RunningProcessPickerViewController
 
+    /// - Parameter processItemSource: where the Processes list comes from. `nil` — the
+    ///   default — enumerates this machine. Supplying a source means this picker never
+    ///   touches the local process table, which is the point: the list then describes the
+    ///   machine the caller is actually targeting. Pair it with
+    ///   `Configuration(tabs: [.processes])`, since the Applications tab would still be
+    ///   showing this machine.
     public init(
         configuration: Configuration = .init(),
         applicationConfiguration: ApplicationConfiguration = .init(),
-        processConfiguration: ProcessConfiguration = .init()
+        processConfiguration: ProcessConfiguration = .init(),
+        processItemSource: AnyRunningItemSource<RunningProcess>? = nil
     ) {
         self.configuration = configuration
         self.applicationPickerViewController = RunningApplicationPickerViewController(configuration: applicationConfiguration)
-        self.processPickerViewController = RunningProcessPickerViewController(configuration: processConfiguration)
+        self.processPickerViewController = if let processItemSource {
+            RunningProcessPickerViewController(itemSource: processItemSource, configuration: processConfiguration)
+        } else {
+            RunningProcessPickerViewController(configuration: processConfiguration)
+        }
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -446,31 +482,53 @@ public final class RunningPickerTabViewController: NSViewController {
         applicationPickerViewController.delegate = self
         processPickerViewController.delegate = self
 
-        let applicationTabItem = NSTabViewItem(viewController: applicationPickerViewController)
-        applicationTabItem.label = configuration.applicationTabLabel
+        let hostedViewController: NSViewController
+        if configuration.tabs.count == 1 {
+            // One list: host it directly. An NSTabViewController with a single item draws
+            // a one-segment tab control, which reads as a broken tab bar rather than as a
+            // title.
+            hostedViewController = pickerViewController(for: configuration.tabs[0])
+        } else {
+            for tab in configuration.tabs {
+                let tabItem = NSTabViewItem(viewController: pickerViewController(for: tab))
+                tabItem.label = switch tab {
+                case .applications: configuration.applicationTabLabel
+                case .processes: configuration.processTabLabel
+                }
+                tabViewController.addTabViewItem(tabItem)
+            }
+            hostedViewController = tabViewController
+        }
 
-        let processTabItem = NSTabViewItem(viewController: processPickerViewController)
-        processTabItem.label = configuration.processTabLabel
-
-        tabViewController.addTabViewItem(applicationTabItem)
-        tabViewController.addTabViewItem(processTabItem)
-
-        addChild(tabViewController)
-        let tabContainerView = tabViewController.view
-        tabContainerView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(tabContainerView)
+        addChild(hostedViewController)
+        let hostedView = hostedViewController.view
+        hostedView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(hostedView)
         NSLayoutConstraint.activate([
-            tabContainerView.topAnchor.constraint(equalTo: view.topAnchor, constant: configuration.contentInsets.top),
-            tabContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: configuration.contentInsets.left),
-            view.trailingAnchor.constraint(equalTo: tabContainerView.trailingAnchor, constant: configuration.contentInsets.right),
-            view.bottomAnchor.constraint(equalTo: tabContainerView.bottomAnchor, constant: configuration.contentInsets.bottom),
+            hostedView.topAnchor.constraint(equalTo: view.topAnchor, constant: configuration.contentInsets.top),
+            hostedView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: configuration.contentInsets.left),
+            view.trailingAnchor.constraint(equalTo: hostedView.trailingAnchor, constant: configuration.contentInsets.right),
+            view.bottomAnchor.constraint(equalTo: hostedView.bottomAnchor, constant: configuration.contentInsets.bottom),
         ])
 
         // Start loading application + process data in the background immediately so each tab is
         // populated (or mostly populated) by the time NSTabViewController forces its child viewDidLoads
-        // via _goodTabViewContentSize, and by the time the user switches tabs.
-        applicationPickerViewController.prefetch()
-        processPickerViewController.prefetch()
+        // via _goodTabViewContentSize, and by the time the user switches tabs. A picker that
+        // is not shown is not prefetched — for the local lists that only wastes work, but a
+        // supplied source would be a round trip to another machine for a list nobody asked for.
+        for tab in configuration.tabs {
+            switch tab {
+            case .applications: applicationPickerViewController.prefetch()
+            case .processes: processPickerViewController.prefetch()
+            }
+        }
+    }
+
+    private func pickerViewController(for tab: Tab) -> NSViewController {
+        switch tab {
+        case .applications: applicationPickerViewController
+        case .processes: processPickerViewController
+        }
     }
 
     // MARK: - Presentation Style
@@ -494,12 +552,30 @@ public final class RunningPickerTabViewController: NSViewController {
         processStyle = style
     }
 
+    // MARK: - Supplied Items
+
+    /// Fetch the supplied process source again.
+    ///
+    /// Does nothing when the Processes list enumerates this machine — that one keeps
+    /// itself current on a timer. A supplied source is loaded once when the picker
+    /// appears, because `loadItems()` may be a round trip to another machine; deciding
+    /// when it is worth spending again is the caller's call, not a timer's.
+    public func reloadProcesses() {
+        processPickerViewController.reload()
+    }
+
     // MARK: - Skeleton
 
     /// Whether the picker tabs currently show loading placeholders instead of
     /// real content.
+    ///
+    /// Read from the first configured tab, not from the Applications tab: with
+    /// `tabs: [.processes]` the Applications picker is never even loaded.
     public var isSkeletonVisible: Bool {
-        applicationPickerViewController.isSkeletonVisible
+        switch configuration.tabs.first ?? .applications {
+        case .applications: applicationPickerViewController.isSkeletonVisible
+        case .processes: processPickerViewController.isSkeletonVisible
+        }
     }
 
     /// Show or hide the loading placeholders on both tabs. Useful as a debug
@@ -533,6 +609,7 @@ public extension RunningPickerTabViewController.Delegate {
     func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, shouldSelectProcess process: RunningProcess) -> Bool { true }
     func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didSelectProcess process: RunningProcess) {}
     func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didConfirmProcess process: RunningProcess) {}
+    func runningPickerTabViewController(_ viewController: RunningPickerTabViewController, didFailToLoadProcesses error: any Error) {}
 
     func runningPickerTabViewControllerWasCancelled(_ viewController: RunningPickerTabViewController) {}
 }
@@ -574,5 +651,9 @@ extension RunningPickerTabViewController: RunningProcessPickerViewController.Del
 
     func runningProcessPickerViewControllerWasCancelled(_ viewController: RunningProcessPickerViewController) {
         delegate?.runningPickerTabViewControllerWasCancelled(self)
+    }
+
+    func runningProcessPickerViewController(_ viewController: RunningProcessPickerViewController, didFailToLoadProcesses error: any Error) {
+        delegate?.runningPickerTabViewController(self, didFailToLoadProcesses: error)
     }
 }
