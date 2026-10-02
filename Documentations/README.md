@@ -15,7 +15,7 @@ RunningApplicationKit 的内部文档。逐条列出本目录下所有文档及�
 |------|------|
 | [0001-simulator-platform-detection.md](Evolutions/0001-simulator-platform-detection.md) | 读 Mach-O `LC_BUILD_VERSION` 判定进程平台，在 Processes 标签页标出模拟器进程 |
 | [0002-picker-presentation-styles.md](Evolutions/0002-picker-presentation-styles.md) | 给两个标签页各加一个 `style`，表格之外新增列表样式；`allowsColumns` 改名为 `allowsFields` 并保留弃用别名 |
-| [draft-injected-item-source.md](Evolutions/draft-injected-item-source.md) | 让调用方把自己手上的进程清单交给选择器显示（为「挑另一台机器上的进程」而加）；选不中的行变灰；`kernel_task` / `launchd` 默认不可选中 |
+| [0003-injected-item-source.md](Evolutions/0003-injected-item-source.md) | 让调用方把自己手上的进程清单交给选择器显示（为「挑另一台机器上的进程」而加）；选不中的行变灰；`kernel_task` / `launchd` 默认不可选中 |
 
 ## Internal —— 实现说明
 
@@ -30,7 +30,7 @@ RunningApplicationKit 的内部文档。逐条列出本目录下所有文档及�
 
 | 文档 | 说明 |
 |------|------|
-| [Glossary.md](Glossary.md) | 项目术语：field 与 column 之别、style、guest 进程、platform 与 architecture 之别、ExclaveCore / ExclaveKit |
+| [Glossary.md](Glossary.md) | 项目术语：field 与 column 之别、style、guest 进程、item source、platform 与 architecture 之别、ExclaveCore / ExclaveKit |
 
 ## 历史文档
 

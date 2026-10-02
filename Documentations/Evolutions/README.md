@@ -14,7 +14,7 @@
 |---|------|------|----------|
 | 0001 | [进程平台识别与模拟器标记](0001-simulator-platform-detection.md) | Implemented | 2026-08-25 |
 | 0002 | [选择器呈现样式（表格与列表）](0002-picker-presentation-styles.md) | Implemented | 2026-08-26 |
-| draft | [由调用方提供清单的选择器](draft-injected-item-source.md) | Accepted | 2026-10-02 |
+| 0003 | [由调用方提供清单的选择器](0003-injected-item-source.md) | Implemented | 2026-10-02 |
 
 ## 状态机
 

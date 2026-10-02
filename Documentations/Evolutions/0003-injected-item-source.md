@@ -1,9 +1,10 @@
-# Draft - 由调用方提供清单的选择器
+# 0003 - 由调用方提供清单的选择器
 
-- **状态**: Accepted
+- **状态**: Implemented
 - **创建日期**: 2026-10-02
 - **最后更新**: 2026-10-02
-- **实现分支**: `feature/injected-item-source`
+- **实现分支**: `feature/injected-item-source`（已合入 `main`，发版 `0.7.0`）
+- **配套文档**: 无（理由见决策日志末行）；术语见[术语表 item source](../Glossary.md#item-source条目供给源)
 
 ## 摘要
 
@@ -32,24 +33,21 @@ public protocol RunningItemSource<Item>: Sendable {
 }
 ```
 
-### 二、公开边界往外挪一层
+### 二、公开边界原地不动，新能力加在既有门面上
 
-今天 `CLAUDE.md` 写的边界是「只有 `RunningPickerTabViewController` 对外，三个 picker 全
-internal，消费者通过 tab VC 交互」。本次把它改成：
+本节与提案最初写的方案**相反**，改写自实现中的失败结果，见决策日志
+「公开 picker 类的尝试已撤回」一行。
+
+最初的方案是把边界往外挪：让 `RunningItemPickerViewController<Item>` 与
+`RunningProcessPickerViewController` 从 internal 变成 `public`，好让调用方单独实例化一个进程
+选择器。**这条路编不过，已撤回。** 边界因此保持 `CLAUDE.md` 原本写的那一条：只有
+`RunningPickerTabViewController` 对外，三个 picker 全 internal。
+
+唯一一处放宽的是数据结构：
 
 | 类型 | 原 | 新 |
 |---|---|---|
-| `RunningItemPickerViewController<Item>` | internal | **`public class`**（不是 `open`） |
-| `RunningProcessPickerViewController` | internal | **`public final class`**，含 `Delegate` |
 | `RunningProcess.init(...)` | internal | **public** |
-
-三条都是为了同一件事：调用方要能**单独**呈现一个进程选择器（而不是那个双 tab 容器），并且
-用自己的数据填充它。
-
-**`public` 而不是 `open`**：外部不需要继承，需要的是能实例化。这个区别很值钱 ——
-`open` 会把那 40 多个 subclass hook、`BaseConfiguration`、`PickerField` 全部拖进公开 API 并
-永久背着；`public class` 下这些成员保持 internal，公开面只多出「初始化 + 代理 + 几个 AppKit
-代理方法」。
 
 `RunningProcess` 的 memberwise init 改 public，是为了让调用方能直接构造条目，**不必为「远端
 进程」另造一个 `RunningItem` 实现**。它本来就是个纯数据结构，字段齐全（含 `platform`、
@@ -57,13 +55,30 @@ internal，消费者通过 tab VC 交互」。本次把它改成：
 
 ### 三、注入数据源后的进程选择器
 
-`RunningProcessPickerViewController` 多一个初始化器。给了 source 就用 source，没给就还是本机枚举：
+`RunningProcessPickerViewController` 多一个初始化器。给了 source 就用 source，没给就还是本机
+枚举 —— 但它**和这个类一样是 internal 的**，调用方碰不到：
 
 ```swift
-public init(configuration: Configuration = .init())                      // 本机，行为完全不变
-public init(itemSource: any RunningItemSource<RunningProcess>, configuration: Configuration = .init())
-public func reload()                                                      // 重新向 source 取一次
+init(configuration: Configuration = .init())                      // 本机，行为完全不变
+init(itemSource: AnyRunningItemSource<RunningProcess>, configuration: Configuration = .init())
+func reload()                                                     // 重新向 source 取一次
 ```
+
+公开入口在门面上，三样一起用：
+
+```swift
+public init(
+    configuration: Configuration = .init(),                       // .init(tabs: [.processes]) 去掉 tab 栏
+    applicationConfiguration: ApplicationConfiguration = .init(),
+    processConfiguration: ProcessConfiguration = .init(),
+    processItemSource: AnyRunningItemSource<RunningProcess>? = nil
+)
+public func reloadProcesses()
+```
+
+参数类型是具体的 `AnyRunningItemSource<RunningProcess>`，不是 `any RunningItemSource<RunningProcess>`：
+受约束关联类型的存在类型要 macOS 13 的运行时支持，本库部署到 11。这不是风格取舍，是实测的编译
+错误。
 
 注入 source 时的两处刻意差异：
 
@@ -109,8 +124,12 @@ public enum RestrictedProcess {
 
 ### API 兼容
 
-全部是新增与放宽（internal → public），**没有破坏性变更**。现有调用方只用
-`RunningPickerTabViewController`，它的行为与签名一字未改。
+全部是新增，外加一处放宽（`RunningProcess` 的 memberwise init，internal → public），
+**没有破坏性变更**。现有调用方只用 `RunningPickerTabViewController`，它既有的签名一字未改 ——
+新增的两个参数（`configuration.tabs`、`processItemSource:`）都有默认值，默认值即旧行为。
+
+`Delegate` 多了一条要求 `didFailToLoadProcesses`，但它在 `public extension` 里带默认实现，
+所以仓库外的实现方也不必改。
 
 唯一的行为变化：`kernel_task` 与 `launchd` 在本机进程选择器里变成不可选中且变灰。这是有意的 ——
 它们原本可选，选了之后附加必然失败。
@@ -133,9 +152,12 @@ autoresizing，恰好掩盖这类布局/接线缺陷）。
 | 日期 | 决定 | 理由 |
 |------|------|------|
 | 2026-10-02 | Created as Accepted | 设计决定在下游 RuntimeViewer 的提案 `draft-jailbroken-ios-injection.md` 里已与用户经两轮澄清提问定稿（「抽象只做数据源」「picker 整体切换」「特殊进程显示但不可选中」），用户随后批准按该计划实施。本文件是那份决定落到本库的记录，不重新开一轮提问 —— 重问等于把已定的事再议一遍。 |
-| 2026-10-02 | 公开用 `public` 而非 `open`，并因此不必公开 40 多个 hook | 上游提案写的是「把泛型 picker 公开」。落地时发现这句有两种读法，代价差一个数量级：`open`（可被外部继承）要求每个 subclass hook、`BaseConfiguration`、`PickerField` 全部公开；`public`（只可实例化）则允许成员保持 internal。调用方要的是「实例化一个由我填数据的 picker」，不是继承，所以取后者。顺带解决了一个硬约束：公开的子类不允许有 internal 超类，所以 `RunningProcessPickerViewController` 要公开，基类必须跟着公开 —— 但只需公开到 `public`。 |
+| 2026-10-02 | **公开 picker 类的尝试已撤回**，picker 保持 internal，新能力加在 `RunningPickerTabViewController` 门面上 | 上游提案写的是「把泛型 picker 公开」，本提案原先的「方案 二」照此写了一张 internal → public 的表。**实到实处编不过，整条路撤回。** 我原以为 Swift 允许 `override` 的访问级别低于所在类型；它不允许：`overriding instance method must be as accessible as its enclosing type`（5 处）、`must be declared public because it matches a requirement in public protocol 'Delegate'`（4 处），再加「公开类不得有 internal 超类」会把基类一起拖进来。要编过就得把那 40 多个 subclass hook、`BaseConfiguration`、`PickerField` 全部公开，并且让 `didConfirm(item:)` 和 `loadItems()` 变成外部可调 —— 外人能在 picker 背后直接触发代理回调。代价远超「能单独实例化一个 picker」这点收益，而本库早就有现成的门面模式能达到同样目的。方案 二、三已按实际落地改写。 |
 | 2026-10-02 | 不为「远端进程」另造 `RunningItem` 实现，改为公开 `RunningProcess.init` | 上游提案草拟了一个 `RuntimeRemoteRunningItem`。实现时发现没必要：`RunningProcess` 是纯数据结构，字段齐全，公开它的 memberwise init 就够了。少一个平行类型，而且表格列、角标、排序、右键菜单全部直接复用。 |
 | 2026-10-02 | 变灰做在 row view 的 `alphaValue` 上，经 `didAdd:forRow:` | 每行只调一次。放在 cell 构造闭包里会在表格样式下每行每列各调一次 `shouldSelect`，而它通常是代理回调。已知局限：若某条目的可选性在**身份不变**的情况下改变（`RunningProcess` 的 `==` 只比 pid），diffable data source 不会重载该行，变灰会过期。实际不会发生 —— 可选性取决于 uid 与 pid，不会在会话中途变 —— 且既有的 `shouldSelectRow` 本来就有同样的性质。 |
 | 2026-10-02 | 注入 source 时不轮询 | 本机枚举是本地增量刷新，几乎免费；注入的 source 一次可能是跨机器 RPC。按 `refreshInterval` 打一台手机是浪费，所以改为出现时取一次 + `reload()`，重取时机交给调用方。 |
 | 2026-10-02 | 受限进程规则无条件生效 | 本库就是「挑一个条目去附加」，pid 0 / pid 1 在任何系统上都附加不了。加配置开关是为不存在的消费者提前付成本。 |
 | 2026-10-02 | 不把本机两个数据源改造成 `RunningItemSource` 的实现 | 见「本次刻意不做的事」。简短版：增量刷新 vs 全量快照语义不合，换来的只有形式统一，而它恰好是唯一可能破坏本步验收标准（现有两个 tab 行为不变）的动作。 |
+| 2026-10-02 | 存的是具体的 `AnyRunningItemSource<Item>`，不是 `any RunningItemSource<Item>` | 协议声明了 primary associated type，所以写参数化存在类型是自然的写法 —— 但它编不过：`runtime support for parameterized protocol types is only available in macOS 13.0.0 or newer`，本库部署到 macOS 11。于是自己写一个类型擦除壳。顺带的好处是闭包初始化器，调用方「从别处取一个清单」通常不值得为它命名一个类型。 |
+| 2026-10-02 | 单 tab 时直接托管那个 picker，不走 `NSTabViewController` | 只有一项的 `NSTabViewController` 会画出一段式的 tab 控件，看起来像坏掉的 tab 栏，而不像标题。`Configuration.tabs` 只有一项时跳过容器，tab 栏随之消失。 |
+| 2026-10-02 | 落地为 0003，状态置 Implemented；**不写配套实现说明**；术语表加一条 | 配套文档：本库既有两篇 `Internal/` 说明都是为「跨多个文件、需要实测表格」的主题写的（平台识别的 slice 四级回退、呈现样式的默认值交互）。本次两处值得记的实现事实 —— macOS 11 的存在类型下限、单 tab 不走容器 —— 各自只约束一行代码，注释就写在那一行的声明上，维护者改到那里必然看见；另起一篇等于立刻多一份会漂移的副本。术语表：新增 `item source` 一条，因为「本机枚举算不算一个 source」是这次最容易误会的点（答案是不算，见「本次刻意不做的事」）。 |

@@ -52,6 +52,22 @@ daemon（`logd`、`runningboardd`、`cfprefsd` …）。
 - **主要出现在**：[平台识别实现说明](Internal/PlatformDetection.md)
 - **延伸阅读**：[进程平台识别与模拟器标记](Evolutions/0001-simulator-platform-detection.md)
 
+### item source（条目供给源）
+
+`RunningItemSource`：调用方交给选择器的一份清单来源，`loadItems()` 返回**一次完整快照**。
+存在的理由是让选择器显示本库看不见的东西 —— 最常见的是另一台机器上的进程。
+
+**本库自己的本机枚举不是一个 item source。** 这是这条术语最容易误会的地方：两个本机数据源没有
+实现这个协议，也不打算实现。它们的刷新是**增量**的（diff 新增与消失的 pid，避免每
+`refreshInterval` 重建四百个 `RunningProcess`），而 `loadItems()` 是全量快照语义 —— 套上去等于
+把一条调过的性能路径换成形式统一。
+
+因此两条路在行为上有意不同：本机那条按定时器自己保持最新；供给源只在选择器出现时取一次，之后
+重取由调用方喊 `reloadProcesses()`，因为一次 `loadItems()` 可能是一趟跨机器 RPC。
+
+- **主要出现在**：`Sources/RunningApplicationKit/RunningItemSource.swift`
+- **延伸阅读**：[由调用方提供清单的选择器](Evolutions/0003-injected-item-source.md)
+
 ### style（呈现样式）
 
 `RunningPickerTabViewController.Style`，取值 `.table` 或 `.list`，**每个标签页各自持有一份**。

@@ -49,7 +49,7 @@ RunningApplicationKit provides data models, observers, and picker UI for macOS r
 
 Only `RunningPickerTabViewController` (and its configuration/delegate/column/tab types), `RunningApplication`, `RunningProcess`, `RunningProcessEnumerator`, `RunningItem`, `RunningItemSource` / `AnyRunningItemSource`, `RestrictedProcess`, `Architecture`, and the two observer actors are `public`. The individual picker view controllers (`RunningApplicationPickerViewController`, `RunningProcessPickerViewController`) and the base class `RunningItemPickerViewController` are `internal` — consumers interact through the tab VC.
 
-**Keep them internal.** Making a picker public was tried while adding the supplied-source feature and withdrawn: Swift requires every `override` in a public class to be public too, which would have published the forty-odd subclass hooks, `BaseConfiguration` and `PickerField` — and worse, made `didConfirm(item:)` and `loadItems()` *callable* from outside, firing delegate callbacks behind the picker's back. Anything a consumer needs goes on the tab VC. See `Documentations/Evolutions/draft-injected-item-source.md`.
+**Keep them internal.** Making a picker public was tried while adding the supplied-source feature and withdrawn: Swift requires every `override` in a public class to be public too, which would have published the forty-odd subclass hooks, `BaseConfiguration` and `PickerField` — and worse, made `didConfirm(item:)` and `loadItems()` *callable* from outside, firing delegate callbacks behind the picker's back. Anything a consumer needs goes on the tab VC. See `Documentations/Evolutions/0003-injected-item-source.md`.
 
 ### Supplying the list
 
