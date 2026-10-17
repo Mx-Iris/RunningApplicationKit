@@ -16,6 +16,7 @@ RunningApplicationKit 的内部文档。逐条列出本目录下所有文档及�
 | [0001-simulator-platform-detection.md](Evolutions/0001-simulator-platform-detection.md) | 读 Mach-O `LC_BUILD_VERSION` 判定进程平台，在 Processes 标签页标出模拟器进程 |
 | [0002-picker-presentation-styles.md](Evolutions/0002-picker-presentation-styles.md) | 给两个标签页各加一个 `style`，表格之外新增列表样式；`allowsColumns` 改名为 `allowsFields` 并保留弃用别名 |
 | [0003-injected-item-source.md](Evolutions/0003-injected-item-source.md) | 让调用方把自己手上的进程清单交给选择器显示（为「挑另一台机器上的进程」而加）；选不中的行变灰；`kernel_task` / `launchd` 默认不可选中 |
+| [draft-adopt-swift-proc.md](Evolutions/draft-adopt-swift-proc.md) | 改用 swift-proc 查询进程；修好永远取不到的进程名；平台识别改为问内核；按进程号观察在 macOS 15 起事件驱动；部署目标升到 macOS 12 |
 
 ## Internal —— 实现说明
 
@@ -23,14 +24,14 @@ RunningApplicationKit 的内部文档。逐条列出本目录下所有文档及�
 
 | 文档 | 说明 |
 |------|------|
-| [PlatformDetection.md](Internal/PlatformDetection.md) | 平台识别的落地细节：内核为什么问不到、slice 四级回退的实测依据、变异测试结论与已知降级 |
+| [PlatformDetection.md](Internal/PlatformDetection.md) | 平台识别的落地细节：平台为什么问内核（推翻了 0001 的「内核问不到」）、内核值的映射、不缓存的理由、被替换的 Mach-O 解析方案与已知降级 |
 | [PresentationStyles.md](Internal/PresentationStyles.md) | 表格与列表两种呈现的落地细节：为什么列表仍是 NSTableView、样式默认值怎么不破坏公开类型、旧 init 消歧义的约束、骨架屏与提案的差异 |
 
 ## 术语表
 
 | 文档 | 说明 |
 |------|------|
-| [Glossary.md](Glossary.md) | 项目术语：field 与 column 之别、style、guest 进程、item source、platform 与 architecture 之别、ExclaveCore / ExclaveKit |
+| [Glossary.md](Glossary.md) | 项目术语：field 与 column 之别、style、guest 进程、item source、platform 与 architecture 之别、内核名与可执行文件名之别、ExclaveCore / ExclaveKit |
 
 ## 历史文档
 

@@ -36,15 +36,11 @@ public struct RunningApplication: RunningItem {
         self.activationPolicy = app.activationPolicy
         self.isSandboxed = resolveSandbox ? app.isSandboxed : false
         self.isSandboxResolved = resolveSandbox
-        // No resolve flag to match `resolveSandbox`: reading the Mach-O header costs
-        // about two orders of magnitude less than the code-signing query behind
-        // `isSandboxed`, and the result is cached per executable path.
-        self.platform = app.executableURL.flatMap { executableURL in
-            MachOPlatform.cachedPlatform(
-                atPath: executableURL.path,
-                runningArchitecture: BSDProcess.machOArchitecture(for: app.processIdentifier)
-            )
-        }
+        // No resolve flag to match `resolveSandbox`: the platform is one system call,
+        // far cheaper than the code-signing query behind `isSandboxed`. It is asked by
+        // process identifier, so it does not need `executableURL`, which processes
+        // outside an app bundle do not have.
+        self.platform = BSDProcess.platform(for: app.processIdentifier)
     }
 
     // Hashable: identity by PID

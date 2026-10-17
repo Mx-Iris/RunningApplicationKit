@@ -1,0 +1,15 @@
+{
+  "originHash" : "22ee9d90074f0f6e4e9114c495a5f05f69b12df426467218b85fe17b8f3e0023",
+  "pins" : [
+    {
+      "identity" : "swift-proc",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Mx-Iris/swift-proc.git",
+      "state" : {
+        "revision" : "7d7b4ca19b4b76390a3dd5566c092a78f8c2eeb3",
+        "version" : "0.1.0"
+      }
+    }
+  ],
+  "version" : 3
+}

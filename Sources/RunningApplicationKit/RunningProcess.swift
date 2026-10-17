@@ -48,9 +48,6 @@ public enum RunningProcessEnumerator {
     // Icon cache keyed by UTType identifier — process icons are just a handful of
     // distinct types (unix executable, generic document, etc.)
     private static let iconCache = ThreadSafeCache<String, NSImage>()
-    // Architecture cache keyed by executable path — lookup returns Architecture??
-    // where outer nil = cache miss, inner nil = architecture undetectable
-    private static let architectureCache = ThreadSafeCache<String, Architecture?>()
     // Sandbox status cache keyed by executable path
     private static let sandboxCache = ThreadSafeCache<String, Bool>()
 
@@ -58,22 +55,14 @@ public enum RunningProcessEnumerator {
     public static func makeProcess(for pid: pid_t) -> RunningProcess? {
         let executablePath = BSDProcess.executablePath(for: pid)
 
-        // PROC_PIDARCHINFO answers two questions — what to call the architecture, and
-        // which slice of a universal binary to read the platform out of — so it is
-        // fetched at most once here and shared, and not at all when both caches hit.
-        var resolvedRunningArchitecture: MachOArchitecture??
-        func runningArchitecture() -> MachOArchitecture? {
-            if let resolvedRunningArchitecture { return resolvedRunningArchitecture }
-            let fetched = BSDProcess.machOArchitecture(for: pid)
-            resolvedRunningArchitecture = fetched
-            return fetched
-        }
-
+        // The executable's file name comes first: the kernel's name for a process is
+        // the same name cut to 31 bytes. When the kernel will not give out the path,
+        // its name for the process is the fallback.
         let name: String
-        if let procName = BSDProcess.name(for: pid) {
-            name = procName
-        } else if let executablePath {
+        if let executablePath {
             name = (executablePath as NSString).lastPathComponent
+        } else if let kernelName = BSDProcess.name(for: pid) {
+            name = kernelName
         } else {
             return nil
         }
@@ -85,28 +74,11 @@ public enum RunningProcessEnumerator {
             icon = nil
         }
 
-        let architecture: Architecture?
-        if let executablePath {
-            let cached: Architecture?? = architectureCache[executablePath]
-            if let cached {
-                architecture = cached
-            } else {
-                let detected = runningArchitecture().map(BSDProcess.architecture(of:))
-                architectureCache[executablePath] = detected
-                architecture = detected
-            }
-        } else {
-            architecture = runningArchitecture().map(BSDProcess.architecture(of:))
-        }
-
-        // Platform comes from the executable file itself, so a process with no readable
-        // path has no platform to report.
-        let platform: Platform?
-        if let executablePath {
-            platform = MachOPlatform.cachedPlatform(atPath: executablePath, runningArchitecture: runningArchitecture())
-        } else {
-            platform = nil
-        }
+        // Both are asked per process, not cached per executable path: each is one
+        // system call, and two instances of one universal binary can run as
+        // different architectures, one of them translated by Rosetta.
+        let architecture = BSDProcess.architecture(for: pid)
+        let platform = BSDProcess.platform(for: pid)
 
         let isSandboxed: Bool
         if let executablePath {

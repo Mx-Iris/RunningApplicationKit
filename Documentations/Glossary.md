@@ -89,12 +89,29 @@ daemon（`logd`、`runningboardd`、`cfprefsd` …）。
 
 | | 回答什么 | 数据来源 | 能区分模拟器吗 |
 |---|---|---|---|
-| `architecture` | 内核**实际以什么架构运行**这个进程 | `proc_pidinfo` + `PROC_PIDARCHINFO` | **不能** |
-| `platform` | 二进制**被编译成给哪个平台** | 可执行文件的 Mach-O 头 | 能 |
+| `architecture` | 内核**实际以什么架构运行**这个进程 | `proc_pidinfo` + `PROC_PIDARCHINFO`，只能查同一用户的进程 | **不能** |
+| `platform` | 二进制**被编译成给哪个平台** | 内核在进程启动时从实际加载的切片记下的平台，`proc_pidinfo` + 私有的 `PROC_PIDPLATFORMINFO`，任何进程都能查 | 能 |
 
 Apple Silicon 上模拟器里的进程跑的是原生 arm64，架构与宿主进程完全一致 —— 这正是需要引入
-`platform` 的原因。
+`platform` 的原因。0.7.0 及以前 `platform` 是读可执行文件的 Mach-O 头得来的，值的含义相同。
 
 - **主要出现在**：`Sources/RunningApplicationKit/Platform.swift`、
-  `Sources/RunningApplicationKit/MachOPlatform.swift`
+  `Sources/RunningApplicationKit/BSDProcess.swift`
 - **延伸阅读**：[平台识别实现说明](Internal/PlatformDetection.md)
+
+### 内核名（kernel name）
+
+内核为进程记下的名字（`p_name`），`proc_name` 读的就是它：**可执行文件名截到 31 字节**。
+
+与可执行文件名（`executablePath` 的最后一段）的区别：
+
+- 文件名超过 31 字节时，内核名只有前 31 字节。内核存了 32 字节，但对外的查询在第 31 字节处截断。
+- 通过符号链接启动时，内核名是链接**解析到的**文件名，不是链接名。想用一个独特的内核名启动子进程，得复制可执行文件，不能建链接。
+- 内核名只对同一用户的进程可查（root 除外），路径却对任何进程都可查。
+
+`RunningProcess.name` 优先用文件名，取不到路径时才用内核名；`RunningProcessObserver` 的 `.name`
+目标两者任一相等即算匹配。
+
+- **主要出现在**：`Sources/RunningApplicationKit/BSDProcess.swift`、
+  `Sources/RunningApplicationKit/RunningProcessObserver.swift`
+- **延伸阅读**：[接入 swift-proc](Evolutions/draft-adopt-swift-proc.md)

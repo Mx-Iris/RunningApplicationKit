@@ -6,9 +6,11 @@ Provides value-type models with architecture, platform, and sandbox detection, a
 
 Platform detection identifies which platform a process's binary was built for — notably telling simulator processes apart from host ones, which architecture alone cannot do: on Apple Silicon a process inside an iOS Simulator runs as native `arm64`, exactly like its host counterparts.
 
+Process information comes from [swift-proc](https://github.com/Mx-Iris/swift-proc), a Swift interface to libproc.
+
 ## Requirements
 
-- macOS 11+
+- macOS 12+
 - Swift 6.2+
 
 ## Installation
@@ -200,6 +202,10 @@ await observer.onTerminate {
 await observer.start()
 ```
 
+A name matches either the executable's file name or the name the kernel records, which is the
+file name cut to 31 bytes. On macOS 15 and later, a `.pid` observer learns of the process's exit
+from the kernel as it happens instead of at the next poll.
+
 ### Enumerating Processes
 
 List all running BSD processes (excluding GUI applications by default):
@@ -265,7 +271,8 @@ Both conform to the `RunningItem` protocol (`processIdentifier`, `name`, `icon`,
 ### Platform
 
 `Platform` mirrors the `PLATFORM_*` constants of a binary's Mach-O `LC_BUILD_VERSION` load
-command, read from the executable on disk and cached per path:
+command. The kernel records the platform of the executable slice it loads when a process starts,
+and the library asks the kernel for it, so any process can be asked about, whoever owns it:
 
 ```swift
 process.platform             // .iOSSimulator
@@ -276,9 +283,12 @@ process.platform?.description // "iOS Simulator"
 Constants this version does not recognize are preserved as `.unknown(rawValue)` rather than
 discarded, since Apple extends the table most years.
 
-`platform` is `nil` when the executable cannot be read — typically a protected system process
-whose path `proc_pidpath` will not report. On the development machine that is about 5% of all
-processes, the same set for which `architecture` is also unavailable.
+`platform` is `nil` when the kernel reports no platform for the process. The kernel's platform
+query is not part of the public SDK: it has been in the kernel since macOS 10.15, but a future
+macOS could change it.
+
+`architecture` is `nil` for processes of other users unless the caller runs as root: the kernel
+answers that query only for the caller's own processes.
 
 ## License
 
